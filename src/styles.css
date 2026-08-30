@@ -29,6 +29,24 @@ button, input { font: inherit; }
 
 button { color: inherit; }
 
+button:not(:disabled) {
+  translate: 0 0;
+  transition:
+    translate 70ms ease-out,
+    box-shadow 70ms ease-out,
+    filter 70ms ease-out,
+    background-color 100ms ease-out,
+    color 100ms ease-out;
+}
+
+button:not(:disabled):active {
+  translate: 2px 2px;
+  filter: brightness(0.92) saturate(0.96);
+  box-shadow:
+    inset 2px 3px 5px rgb(48 41 61 / 0.42),
+    inset 0 1px 0 rgb(255 255 255 / 0.32) !important;
+}
+
 button:focus-visible, input:focus-visible, canvas:focus-visible {
   outline: max(2px, 0.25cqw) solid var(--amber);
   outline-offset: max(2px, 0.18cqw);

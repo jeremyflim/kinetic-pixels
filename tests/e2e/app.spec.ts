@@ -16,6 +16,25 @@ async function materialCount(page: Page, materialId: number): Promise<number> {
   return page.evaluate((id) => window.__KINETIC_PIXELS__!.count(id), materialId)
 }
 
+async function pressStyles(page: Page, selector: string) {
+  const button = page.locator(selector)
+  const before = await button.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return { translate: style.translate, shadow: style.boxShadow, filter: style.filter }
+  })
+  const box = await button.boundingBox()
+  if (!box) throw new Error(`Button did not render: ${selector}`)
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.waitForTimeout(90)
+  const pressed = await button.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return { translate: style.translate, shadow: style.boxShadow, filter: style.filter }
+  })
+  await page.mouse.up()
+  return { before, pressed }
+}
+
 test.beforeEach(async ({ page }) => {
   await ready(page)
   await page.evaluate(() => localStorage.clear())
@@ -29,6 +48,19 @@ test('starts with the wooden title, Sand, paused state, and instruction', async 
   await expect(page.getByText('Paused')).toBeVisible()
   await expect(page.getByText('Click to play')).toBeVisible()
   expect(await materialCount(page, 4)).toBe(TITLE_WOOD_CELLS)
+})
+
+test('momentary action buttons visibly press into the console', async ({ page }) => {
+  const clear = await pressStyles(page, '.console-button.destructive')
+  expect(clear.pressed.translate).not.toBe(clear.before.translate)
+  expect(clear.pressed.shadow).toContain('inset')
+  expect(clear.pressed.filter).not.toBe(clear.before.filter)
+
+  const memory = await pressStyles(page, '.memory-button')
+  expect(memory.pressed.translate).not.toBe(memory.before.translate)
+  expect(memory.pressed.shadow).toContain('inset')
+  expect(memory.pressed.filter).not.toBe(memory.before.filter)
+  await expect(page.getByRole('dialog')).toBeVisible()
 })
 
 test('physics continues ticking throughout a long drawing gesture', async ({ page }) => {
