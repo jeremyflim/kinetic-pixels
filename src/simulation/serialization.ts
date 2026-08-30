@@ -2,7 +2,7 @@ import { MATERIAL_BY_ID } from './materials'
 import { CELL_COUNT, GRID_HEIGHT, GRID_WIDTH, type Snapshot } from './types'
 
 export const SAVE_FORMAT = 'kinetic-pixels'
-export const SAVE_VERSION = 1
+export const SAVE_VERSION = 2
 export const MAX_IMPORT_BYTES = 1_500_000
 
 export interface SaveFileV1 {

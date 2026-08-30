@@ -1,7 +1,7 @@
 # Kinetic Pixels
 
 Kinetic Pixels is a desktop-first, browser-only pixel-physics sandbox presented as a
-pink-and-lavender molded-plastic console. Its 320 × 300 deterministic world starts with a
+pink-and-lavender molded-plastic console. Its 192 × 180 deterministic world starts with a
 two-line wooden title that is made from ordinary Wood cells: pour Sand over it, redirect
 Water through it, erase it, or set it on fire.
 
@@ -62,7 +62,7 @@ A save records the material grid, per-cell state, tick, initial seed, current PR
 format metadata, name, and timestamp. It does not record the selected tool, radius, dialog
 state, play state, startup hint, or pointer preview.
 
-JSON files use format `kinetic-pixels`, version `1`, fixed 320 × 300 dimensions, and Base64
+JSON files use format `kinetic-pixels`, version `2`, fixed 192 × 180 dimensions, and Base64
 typed-array bytes. Imports are size-limited and fully validated before replacing the live world;
 bad JSON, unknown materials, unsupported versions, invalid dimensions, and decoded-length
 mismatches leave the current world untouched.
@@ -96,12 +96,12 @@ npm run benchmark
 
 Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1.11):
 
-| 320 × 300 scenario | Mean tick | Throughput |
+| 192 × 180 scenario | Mean tick | Throughput |
 | --- | ---: | ---: |
-| Fully occupied stationary grid | 2.95 ms | 338.87 ticks/s |
-| Falling Sand | 7.90 ms | 126.51 ticks/s |
-| Water spread | 11.84 ms | 84.44 ticks/s |
-| Burning Wood / Fire / Smoke | 13.66 ms | 73.20 ticks/s |
+| Fully occupied stationary grid | 1.22 ms | 821.22 ticks/s |
+| Falling Sand | 3.13 ms | 319.01 ticks/s |
+| Water spread | 5.07 ms | 197.40 ticks/s |
+| Burning Wood / Fire / Smoke | 4.79 ms | 208.88 ticks/s |
 
 These figures are descriptive rather than CI thresholds because shared runners have noisy timing.
 

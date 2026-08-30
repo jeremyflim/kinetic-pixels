@@ -153,13 +153,14 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
   background: #f9f5ff;
   box-shadow: inset 0 0.22cqw 0 white, 0.18cqw 0.2cqw 0 #21192c;
   cursor: pointer;
+  color: var(--ink);
   text-transform: uppercase;
   font-weight: 900;
   font-size: clamp(7px, 0.77cqw, 11px);
   letter-spacing: 0.02em;
 }
 
-.material-button svg { width: 1.75cqw; height: 1.75cqw; min-width: 12px; min-height: 12px; }
+.material-button svg { width: 1.75cqw; height: 1.75cqw; min-width: 12px; min-height: 12px; color: var(--ink); stroke-width: 2.4; }
 .material-button i { position: absolute; inset: auto 0.25cqw 0.22cqw; height: 0.22cqw; min-height: 2px; }
 .material-button:hover { background: var(--shell-highlight); }
 .material-button:active, .material-button.selected {

@@ -8,7 +8,7 @@ function filled(materialId: number) {
   return world
 }
 
-describe('320 × 300 simulation tick', () => {
+describe('192 × 180 simulation tick', () => {
   const occupied = filled(MaterialId.Stone)
   bench('fully occupied stationary grid', () => stepWorld(occupied))
 
@@ -25,7 +25,7 @@ describe('320 × 300 simulation tick', () => {
   const combustion = createWorld(0xabc123, false)
   for (let index = 0; index < combustion.material.length; index += 3) {
     combustion.material[index] = MaterialId.Wood
-    combustion.state[index] = BURNING_FLAG | (index % 300)
+    combustion.state[index] = BURNING_FLAG | (index % 180)
     if (index + 1 < combustion.material.length) {
       combustion.material[index + 1] = MaterialId.Fire
       combustion.state[index + 1] = 60

@@ -16,7 +16,7 @@ const GLYPHS: Record<string, readonly string[]> = {
 }
 
 export const TITLE_LINES = ['KINETIC', 'PIXELS'] as const
-export const TITLE_SCALE = 5
+export const TITLE_SCALE = 3
 const LETTER_GAP = 2
 const LINE_GAP = 3
 

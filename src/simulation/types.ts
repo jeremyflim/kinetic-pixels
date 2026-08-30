@@ -1,5 +1,5 @@
-export const GRID_WIDTH = 320
-export const GRID_HEIGHT = 300
+export const GRID_WIDTH = 192
+export const GRID_HEIGHT = 180
 export const CELL_COUNT = GRID_WIDTH * GRID_HEIGHT
 
 export interface World {

@@ -71,7 +71,7 @@ self.onmessage = (event: MessageEvent<WorkerCommand>) => {
   if (command.type === 'running') setRunning(command.running)
   if (command.type === 'stroke') {
     paintStroke(world, command.fromX, command.fromY, command.toX, command.toY, command.radius, command.materialId, command.erase)
-    draw()
+    if (!running) draw()
   }
   if (command.type === 'clear') {
     clearWorld(world)

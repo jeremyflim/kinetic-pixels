@@ -1,7 +1,7 @@
 # Architecture and simulation invariants
 
 Kinetic Pixels is a browser-only React application. React owns controls, dialog state, and
-low-frequency status. A dedicated module worker owns the canonical 320 × 300 world, advances
+low-frequency status. A dedicated module worker owns the canonical 192 × 180 world, advances
 it at a fixed 60 Hz, and renders through a transferred `OffscreenCanvas`. The pure simulation
 core has no React, DOM, worker, or canvas dependencies.
 
@@ -28,6 +28,6 @@ commands are posted, and stroke endpoints are interpolated in the simulation cor
 
 ## Rendering
 
-The worker renders one logical pixel per cell to a 320 × 300 offscreen buffer. Material color
+The worker renders one logical pixel per cell to a 192 × 180 offscreen buffer. Material color
 variation is a stable hash of material, coordinates, cell state, and seed. CSS scales the canvas
 with `image-rendering: pixelated` while preserving the grid's 16:15 aspect ratio.

@@ -14,6 +14,14 @@ const ICONS: Record<string, typeof Sparkles> = {
 
 interface Point { x: number; y: number }
 
+interface PendingStroke {
+  from: Point
+  to: Point
+  radius: number
+  materialId: number
+  erase: boolean
+}
+
 declare global {
   interface Window {
     __KINETIC_PIXELS__?: {
@@ -40,6 +48,8 @@ export function App() {
   const previousPoint = useRef<Point | null>(null)
   const previousMaterial = useRef<number>(MaterialId.Sand)
   const runningRef = useRef(false)
+  const pendingStroke = useRef<PendingStroke | null>(null)
+  const strokeFrame = useRef<number | null>(null)
 
   const [ready, setReady] = useState(false)
   const [running, setRunningState] = useState(false)
@@ -71,6 +81,10 @@ export function App() {
       }
     }
     return () => worker.terminate()
+  }, [])
+
+  useEffect(() => () => {
+    if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current)
   }, [])
 
   const requestSnapshot = useCallback(() => new Promise<Snapshot>((resolve) => {
@@ -132,17 +146,45 @@ export function App() {
     }
   }
 
-  function sendStroke(from: Point, to: Point) {
+  function postStroke(stroke: PendingStroke) {
     workerRef.current?.postMessage({
       type: 'stroke',
-      fromX: from.x,
-      fromY: from.y,
-      toX: to.x,
-      toY: to.y,
-      radius,
-      materialId: selectedMaterial,
-      erase: eraser,
+      fromX: stroke.from.x,
+      fromY: stroke.from.y,
+      toX: stroke.to.x,
+      toY: stroke.to.y,
+      radius: stroke.radius,
+      materialId: stroke.materialId,
+      erase: stroke.erase,
     })
+  }
+
+  function flushPendingStroke() {
+    if (strokeFrame.current !== null) {
+      cancelAnimationFrame(strokeFrame.current)
+      strokeFrame.current = null
+    }
+    const stroke = pendingStroke.current
+    pendingStroke.current = null
+    if (stroke) postStroke(stroke)
+  }
+
+  function queueStroke(from: Point, to: Point) {
+    const queued = pendingStroke.current
+    if (queued && queued.radius === radius && queued.materialId === selectedMaterial && queued.erase === eraser) {
+      queued.to = to
+    } else {
+      flushPendingStroke()
+      pendingStroke.current = { from, to, radius, materialId: selectedMaterial, erase: eraser }
+    }
+    if (strokeFrame.current === null) {
+      strokeFrame.current = requestAnimationFrame(() => {
+        strokeFrame.current = null
+        const stroke = pendingStroke.current
+        pendingStroke.current = null
+        if (stroke) postStroke(stroke)
+      })
+    }
   }
 
   function onPointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
@@ -156,22 +198,20 @@ export function App() {
       setStartup(false)
       setRunning(true)
     }
-    sendStroke(point, point)
+    postStroke({ from: point, to: point, radius, materialId: selectedMaterial, erase: eraser })
   }
 
   function onPointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
-    const events = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent]
-    for (const nativeEvent of events) {
-      const point = pointFromClient(nativeEvent.clientX, nativeEvent.clientY, event.currentTarget)
-      setPreview(point)
-      if (pointerDown.current && previousPoint.current) {
-        sendStroke(previousPoint.current, point)
-        previousPoint.current = point
-      }
+    const point = pointFromClient(event.clientX, event.clientY, event.currentTarget)
+    setPreview(point)
+    if (pointerDown.current && previousPoint.current) {
+      queueStroke(previousPoint.current, point)
+      previousPoint.current = point
     }
   }
 
   function endPointer() {
+    flushPendingStroke()
     pointerDown.current = false
     previousPoint.current = null
   }
@@ -183,6 +223,9 @@ export function App() {
   }
 
   function clear() {
+    pendingStroke.current = null
+    if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current)
+    strokeFrame.current = null
     workerRef.current?.postMessage({ type: 'clear' })
     setStartup(false)
   }
@@ -227,7 +270,7 @@ export function App() {
               )
             })}
           </div>
-          <div className="rail-mark" aria-hidden="true"><span>KP</span><small>320 × 300</small></div>
+          <div className="rail-mark" aria-hidden="true"><span>KP</span><small>{GRID_WIDTH} × {GRID_HEIGHT}</small></div>
         </aside>
 
         <section className="viewport-panel chamfer" aria-label="Simulation viewport">
@@ -241,7 +284,7 @@ export function App() {
                 ref={canvasRef}
                 width={GRID_WIDTH}
                 height={GRID_HEIGHT}
-                aria-label="Interactive 320 by 300 cell pixel physics field. Click and drag to paint the selected material."
+                aria-label={`Interactive ${GRID_WIDTH} by ${GRID_HEIGHT} cell pixel physics field. Click and drag to paint the selected material.`}
                 data-ready={ready}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}

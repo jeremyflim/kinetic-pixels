@@ -18,7 +18,7 @@ describe('startup title', () => {
     const world = createWorld(42)
     const mask = titleMask(world.width, world.height)
     const wood = [...world.material].filter((value) => value === MaterialId.Wood).length
-    expect(wood).toBe(4_800)
+    expect(wood).toBe(1_728)
     expect([...mask].reduce((sum, value) => sum + value, 0)).toBe(wood)
     expect(world.material[index(world, 160, 150)]).toBe(MaterialId.Empty)
   })
@@ -181,7 +181,7 @@ describe('world commands and persistence', () => {
     expect(parsed.snapshot.material).toEqual(world.material)
     expect(parsed.snapshot.state).toEqual(world.state)
     expect(parsed.snapshot.tick).toBe(world.tick)
-    expect(parsed.file.version).toBe(1)
+    expect(parsed.file.version).toBe(2)
   })
 
   it('rejects invalid saves before mutating a world', () => {

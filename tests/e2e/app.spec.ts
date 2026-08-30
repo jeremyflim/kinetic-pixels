@@ -1,4 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
+import { GRID_HEIGHT, GRID_WIDTH } from '../../src/simulation/types'
+
+const TITLE_WOOD_CELLS = 1_728
 
 async function ready(page: Page) {
   page.on('pageerror', (error) => console.error('PAGE ERROR:', error.stack ?? error.message))
@@ -19,10 +22,32 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('starts with the wooden title, Sand, paused state, and instruction', async ({ page }) => {
-  await expect(page.getByRole('button', { name: 'Sand' })).toHaveAttribute('aria-pressed', 'true')
+  const sandButton = page.getByRole('button', { name: 'Sand' })
+  await expect(sandButton).toHaveAttribute('aria-pressed', 'true')
+  await expect(sandButton).toHaveCSS('color', 'rgb(48, 41, 61)')
+  await expect(sandButton.locator('svg')).toHaveCSS('color', 'rgb(48, 41, 61)')
   await expect(page.getByText('Paused')).toBeVisible()
   await expect(page.getByText('Click to play')).toBeVisible()
-  expect(await materialCount(page, 4)).toBe(4_800)
+  expect(await materialCount(page, 4)).toBe(TITLE_WOOD_CELLS)
+})
+
+test('physics continues ticking throughout a long drawing gesture', async ({ page }) => {
+  await page.keyboard.press('Space')
+  await page.waitForTimeout(100)
+  const tickBefore = await page.evaluate(() => window.__KINETIC_PIXELS__!.tick())
+  const canvas = page.locator('canvas')
+  const box = await canvas.boundingBox()
+  if (!box) throw new Error('Canvas did not render')
+  await page.mouse.move(box.x + 20, box.y + 30)
+  await page.mouse.down()
+  for (let step = 0; step < 24; step += 1) {
+    await page.mouse.move(box.x + 20 + step * 9, box.y + 30 + (step % 4) * 8)
+    await page.waitForTimeout(10)
+  }
+  const tickDuringStroke = await page.evaluate(() => window.__KINETIC_PIXELS__!.tick())
+  await page.mouse.up()
+  expect(tickDuringStroke).toBeGreaterThan(tickBefore + 5)
+  await expect(page.getByRole('button', { name: /Pause/ })).toBeVisible()
 })
 
 test('first canvas pointer starts and paints in the same gesture', async ({ page }) => {
@@ -37,10 +62,10 @@ test('a first click on occupied Wood starts without replacing it', async ({ page
   const canvas = page.locator('canvas')
   const box = await canvas.boundingBox()
   if (!box) throw new Error('Canvas did not render')
-  await page.mouse.click(box.x + (42.5 / 320) * box.width, box.y + (107.5 / 300) * box.height)
+  await page.mouse.click(box.x + (25.5 / GRID_WIDTH) * box.width, box.y + (64.5 / GRID_HEIGHT) * box.height)
   await expect(page.getByRole('button', { name: /Pause/ })).toBeVisible()
-  expect(await page.evaluate(() => window.__KINETIC_PIXELS__!.cell(42, 107))).toBe(4)
-  expect(await materialCount(page, 4)).toBe(4_800)
+  expect(await page.evaluate(() => window.__KINETIC_PIXELS__!.cell(25, 64))).toBe(4)
+  expect(await materialCount(page, 4)).toBe(TITLE_WOOD_CELLS)
 })
 
 test('Space starts without painting and pause status tracks state', async ({ page }) => {
@@ -91,7 +116,7 @@ test('Clear empties the world and reload restores the title', async ({ page }) =
   await expect(page.getByText('Click to play')).toBeHidden()
   await page.reload()
   await expect(page.locator('canvas')).toHaveAttribute('data-ready', 'true')
-  expect(await materialCount(page, 4)).toBe(4_800)
+  expect(await materialCount(page, 4)).toBe(TITLE_WOOD_CELLS)
 })
 
 test('memory manager pauses, locks shortcuts, ignores backdrop, and closes with Escape', async ({ page }) => {
