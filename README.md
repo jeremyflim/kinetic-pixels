@@ -1,4 +1,4 @@
-# Try the game here!
+# Try it here!
 
 https://jeremyflim.github.io/kinetic-pixels/
 
