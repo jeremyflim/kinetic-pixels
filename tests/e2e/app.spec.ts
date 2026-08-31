@@ -182,8 +182,8 @@ test('all blinking indicators share one console signal timeline', async ({ page 
       prompt: style('.startup-hint').backgroundColor,
     }
   }), { timeout: 2_500, intervals: [20] }).toEqual({
-    status: 'rgb(255, 71, 132)',
-    statusOpacity: '0.28',
+    status: 'rgb(255, 190, 79)',
+    statusOpacity: '1',
     left: 'rgb(255, 190, 79)',
     right: 'rgb(146, 167, 255)',
     prompt: 'rgb(69, 230, 189)',
