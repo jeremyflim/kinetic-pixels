@@ -1,4 +1,6 @@
-import { MATERIAL_BY_ID, MaterialId, initializeTransientState, updateThermalWorld } from './materials'
+import { MATERIAL_BY_ID, MaterialId, initializeTransientState } from './materials'
+import { AMBIENT_TEMPERATURE } from './constants'
+import { updatePhysicalWorld } from './physics'
 import { normalizeSeed } from './random'
 import { rasterizeTitle } from './title'
 import { GRID_HEIGHT, GRID_WIDTH, type MaterialMobility, type Snapshot, type World } from './types'
@@ -15,12 +17,19 @@ export function createWorld(seed = 0x4b504958, withTitle = true, width = GRID_WI
     material: new Uint8Array(width * height),
     state: new Uint16Array(width * height),
     status: new Uint8Array(width * height),
-    heat: new Uint8Array(width * height),
+    temperature: new Int16Array(width * height),
+    moisture: new Uint8Array(width * height),
+    fuel: new Uint8Array(width * height),
+    liquidMass: new Uint8Array(width * height),
+    phaseProgress: new Uint16Array(width * height),
     updatedAt: new Uint32Array(width * height),
+    temperatureDelta: new Int32Array(width * height),
+    moistureDelta: new Int16Array(width * height),
     tick: 0,
     seed: normalizedSeed,
     randomState: normalizedSeed,
   }
+  world.temperature.fill(AMBIENT_TEMPERATURE)
   if (withTitle) rasterizeTitle(world)
   return world
 }
@@ -49,15 +58,21 @@ export function stepWorld(world: World): void {
   updatePass(world, STATIONARY_MOBILITIES, false)
   updatePass(world, FALLING_MOBILITIES, false)
   updatePass(world, RISING_MOBILITIES, true)
-  updateThermalWorld(world)
+  updatePhysicalWorld(world)
 }
 
 export function clearWorld(world: World): void {
   world.material.fill(0)
   world.state.fill(0)
   world.status.fill(0)
-  world.heat.fill(0)
+  world.temperature.fill(AMBIENT_TEMPERATURE)
+  world.moisture.fill(0)
+  world.fuel.fill(0)
+  world.liquidMass.fill(0)
+  world.phaseProgress.fill(0)
   world.updatedAt.fill(0)
+  world.temperatureDelta.fill(0)
+  world.moistureDelta.fill(0)
 }
 
 export function paintCircle(world: World, centerX: number, centerY: number, radius: number, materialId: number, erase = false): void {
@@ -78,7 +93,11 @@ export function paintCircle(world: World, centerX: number, centerY: number, radi
         world.material[index] = MaterialId.Empty
         world.state[index] = 0
         world.status[index] = 0
-        world.heat[index] = 0
+        world.temperature[index] = AMBIENT_TEMPERATURE
+        world.moisture[index] = 0
+        world.fuel[index] = 0
+        world.liquidMass[index] = 0
+        world.phaseProgress[index] = 0
       } else if (world.material[index] === MaterialId.Empty && MATERIAL_BY_ID.get(materialId)?.paintable) {
         world.material[index] = materialId
         initializeTransientState(world, index, materialId)
@@ -106,7 +125,11 @@ export function snapshotWorld(world: World): Snapshot {
     material: world.material.slice(),
     state: world.state.slice(),
     status: world.status.slice(),
-    heat: world.heat.slice(),
+    temperature: world.temperature.slice(),
+    moisture: world.moisture.slice(),
+    fuel: world.fuel.slice(),
+    liquidMass: world.liquidMass.slice(),
+    phaseProgress: world.phaseProgress.slice(),
   }
 }
 
@@ -116,13 +139,23 @@ export function replaceWorld(world: World, snapshot: Snapshot): void {
     snapshot.material.length !== world.material.length
     || snapshot.state.length !== world.state.length
     || snapshot.status.length !== world.status.length
-    || snapshot.heat.length !== world.heat.length
+    || snapshot.temperature.length !== world.temperature.length
+    || snapshot.moisture.length !== world.moisture.length
+    || snapshot.fuel.length !== world.fuel.length
+    || snapshot.liquidMass.length !== world.liquidMass.length
+    || snapshot.phaseProgress.length !== world.phaseProgress.length
   ) throw new Error('World data length does not match')
   world.material.set(snapshot.material)
   world.state.set(snapshot.state)
   world.status.set(snapshot.status)
-  world.heat.set(snapshot.heat)
+  world.temperature.set(snapshot.temperature)
+  world.moisture.set(snapshot.moisture)
+  world.fuel.set(snapshot.fuel)
+  world.liquidMass.set(snapshot.liquidMass)
+  world.phaseProgress.set(snapshot.phaseProgress)
   world.updatedAt.fill(0)
+  world.temperatureDelta.fill(0)
+  world.moistureDelta.fill(0)
   world.tick = snapshot.tick >>> 0
   world.seed = normalizeSeed(snapshot.seed)
   world.randomState = normalizeSeed(snapshot.randomState)

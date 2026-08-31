@@ -111,7 +111,7 @@ export function App() {
       count: async (materialId) => (await requestSnapshot()).material.reduce((count, value) => count + Number(value === materialId), 0),
       cell: async (x, y) => (await requestSnapshot()).material[y * GRID_WIDTH + x],
       status: async (x, y) => (await requestSnapshot()).status[y * GRID_WIDTH + x],
-      heat: async (x, y) => (await requestSnapshot()).heat[y * GRID_WIDTH + x],
+      heat: async (x, y) => (await requestSnapshot()).temperature[y * GRID_WIDTH + x],
       tick: async () => (await requestSnapshot()).tick,
     }
     return () => { delete window.__KINETIC_PIXELS__ }

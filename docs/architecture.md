@@ -9,9 +9,10 @@ core has no React, DOM, worker, or canvas dependencies.
 
 - Material IDs are stable, numeric, and resolved through the registry.
 - `MATERIAL_PROPERTIES` is the authoritative table for intrinsic physical behavior.
-- `MATERIAL_REACTIONS` is sparse and pair-based; unlisted pairs do not react.
-- The world uses parallel typed arrays for material, progress/lifetime state, status flags,
-  heat, and last-updated tick.
+- `MATERIAL_REACTIONS` contains only identity-specific chemistry. Unlisted pairs still exchange
+  temperature, moisture, charge, or position through shared property-driven systems.
+- The world uses parallel typed arrays for material, progress/lifetime/charge state, status flags,
+  temperature, moisture, fuel, liquid mass, phase progress, and last-updated tick.
 - Simulation randomness comes only from the serialized seeded PRNG.
 - Every cell is updated at most once per tick.
 - Falling passes scan bottom-to-top; rising passes scan top-to-bottom.
@@ -29,25 +30,29 @@ Every material declares a phase (`vacuum`, `solid`, `liquid`, `gas`, or `energy`
 which keeps immovable and movable solids distinct without special-casing their IDs.
 
 Density controls displacement, friction controls drift and liquid reach, hardness resists Acid,
-conductivity routes Spark energy, and corrosiveness scales corrosion. Thermal properties define
-initial heat, emitted heat, heat capacity, cooling, ignition thresholds, and persistent material
-transitions. Heat is an intentionally abstract 0–255 gameplay quantity rather than Celsius.
-Flammability, burn rate, and Smoke yield control combustion after ignition.
+conductivity routes the current Spark charge behavior, and corrosiveness scales corrosion.
+Thermal conductivity, heat capacity, and emissivity drive a shared temperature solver. Every
+cell—including empty air—retains a Celsius-like gameplay temperature. Cardinal conduction is
+double-buffered; exposed hot surfaces radiate through up to two air cells.
 
-Material identity answers what a cell is. `state` stores progress or transient lifetime, `status`
-stores temporary conditions (`Burning`, `Wet`, and `Charged`), and `heat` stores transferable
-thermal exposure. A persistent phase or behavior change receives a new material ID; temporary
-conditions do not.
+Phase transitions are material properties with directional thresholds and latent progress.
+Water/Ice/Steam and Stone/Lava therefore change through energy transfer instead of contact-pair
+outcomes. Moisture absorption and diffusion use capacity and permeability properties; finite
+Water mass is spent as porous cells become wet. Evaporation consumes temperature.
 
-Reactions are unordered material-pair entries with explicit initiators, optional status
-conditions, probabilities expressed per second, and effects on either participant. Immediate
-rules handle events such as Water extinguishing Fire and Lava flashing Water into Steam. Heat
-thresholds handle sustained processes such as Sand becoming Glass and Wood igniting. The
-registry is intentionally sparse instead of a dense matrix because most pairs do not interact.
+Material identity answers what a cell is. `state` stores lifetime, growth, or the existing charge
+budget; `status` stores `Burning` and `Charged`; separate arrays store temperature, moisture,
+remaining fuel, liquid mass, and latent phase progress. The legacy `Wet` flag exists only for
+save migration and is derived from moisture during simulation.
 
-Version 3 saves serialize every canonical array. Version 2 files remain accepted; their packed
-Wood burning flag migrates into the status channel and their new heat/status channels initialize
-to zero before the world is replaced.
+Combustion begins from temperature and dryness, consumes fuel, and returns heat to the shared
+field. Fire-to-Wood, Wood-to-Wood, Water-to-Fire, and Lava-to-Water pair outcomes are not present.
+The sparse registry currently contains only Acid corrosion and dilution. Plant growth remains a
+biological material behavior.
+
+Movement and combustion update at 60 Hz, temperature and phase behavior at 20 Hz, and moisture
+at 10 Hz. Version 4 saves serialize every canonical array. Version 2 and 3 files remain accepted;
+legacy burning, Wet, and heat values migrate into the new channels before replacement.
 
 ## Worker protocol
 

@@ -1,4 +1,4 @@
-import { MaterialId } from './materials'
+import { MaterialId, initializeTransientState } from './materials'
 import type { World } from './types'
 
 const GLYPHS: Record<string, readonly string[]> = {
@@ -60,6 +60,7 @@ export function rasterizeTitle(world: World): number {
   for (let index = 0; index < mask.length; index += 1) {
     if (mask[index]) {
       world.material[index] = MaterialId.Wood
+      initializeTransientState(world, index, MaterialId.Wood)
       count += 1
     }
   }

@@ -1,4 +1,4 @@
-import { BURN_PROGRESS_LIMIT, MATERIALS, MaterialId, StatusFlag } from './materials'
+import { MATERIALS, MATERIAL_PROPERTIES, MaterialId, type MaterialIdValue, StatusFlag } from './materials'
 import type { World } from './types'
 
 const RGB = MATERIALS.map((material) => material.colors.map((color) => {
@@ -52,8 +52,9 @@ export function cellColor(world: World, index: number): readonly [number, number
   const y = Math.floor(index / world.width)
   let color: readonly [number, number, number] = colors[colorIndex(materialId, x, y, cellState, world.seed, colors.length)]
   if (isBurning) {
-    const progress = cellState
-    const burnRatio = progress / BURN_PROGRESS_LIMIT
+    const maximumFuel = Math.max(1, MATERIAL_PROPERTIES[materialId as MaterialIdValue].fuel)
+    const progress = maximumFuel - world.fuel[index]
+    const burnRatio = progress / maximumFuel
     const hotColorCount = burnRatio < 0.55 ? 3 : 2
     const charredColorCount = burnRatio < 0.55 ? 1 : 2
     const showChar = colorIndex(materialId, x, y, cellState ^ world.tick, world.seed, hotColorCount + charredColorCount) >= hotColorCount
@@ -61,15 +62,16 @@ export function cellColor(world: World, index: number): readonly [number, number
       ? BURNING_WOOD_RGB[BURNING_WOOD_RGB.length - 1 - (progress % charredColorCount)]
       : BURNING_WOOD_RGB[colorIndex(materialId, x, y, cellState ^ world.tick, world.seed, hotColorCount)]
   }
-  if (cellStatus & StatusFlag.Wet) {
-    color = blendColor(color, [37, 174, 227], 0.32)
+  if (world.moisture[index] > 0) {
+    const capacity = Math.max(1, MATERIAL_PROPERTIES[materialId as MaterialIdValue].moistureCapacity)
+    color = blendColor(color, [37, 174, 227], Math.min(0.4, world.moisture[index] / capacity * 0.4))
   }
   if (cellStatus & StatusFlag.Charged) {
     const chargeColor = world.tick % 2 === 0 ? [255, 255, 255] as const : [78, 224, 200] as const
     color = blendColor(color, chargeColor, 0.65)
   }
-  if (!isBurning && VISIBLY_HEATED.has(materialId) && world.heat[index] > 40) {
-    const blend = Math.min(0.38, ((world.heat[index] - 40) / 215) * 0.38)
+  if (!isBurning && VISIBLY_HEATED.has(materialId) && world.temperature[index] > 100) {
+    const blend = Math.min(0.46, ((world.temperature[index] - 100) / 900) * 0.46)
     color = blendColor(color, [255, 109, 74], blend)
   }
   return color

@@ -1,3 +1,4 @@
+import { AMBIENT_TEMPERATURE, MAXIMUM_TEMPERATURE, MINIMUM_TEMPERATURE } from './constants'
 import { chance, randomInt } from './random'
 import type { MaterialDefinition, MaterialProperties, UpdateContext, World } from './types'
 
@@ -9,9 +10,8 @@ export const MaterialId = {
 
 export type MaterialIdValue = (typeof MaterialId)[keyof typeof MaterialId]
 
+// Wet remains only for version 2/3 save migration. New behavior derives wetness from moisture.
 export const StatusFlag = { Burning: 1 << 0, Wet: 1 << 1, Charged: 1 << 2 } as const
-export const BURN_PROGRESS_LIMIT = 110
-export const BURNING_WOOD_SPREAD_SCALE = 1 - Math.pow(1 - 0.08, 1 / 60)
 export const FIRE_LIFETIME_MIN = 38
 export const FIRE_LIFETIME_MAX = 72
 export const SMOKE_LIFETIME_MIN = 90
@@ -20,77 +20,96 @@ export const STEAM_LIFETIME_MIN = 180
 export const STEAM_LIFETIME_MAX = 360
 
 const inertProperties = {
-  hardness: 0, conductivity: false, corrosiveness: 0, initialHeat: 0, heatOutput: 0,
-  heatCapacity: 1, coolingRate: 1, ignitionHeat: null, transitionHeat: null,
-  transitionProduct: null, flammability: 0, burnRate: 0, smokeYield: 0,
+  hardness: 0, conductivity: false, corrosiveness: 0,
+  initialTemperature: AMBIENT_TEMPERATURE, thermalConductivity: 8, heatCapacity: 1, emissivity: 0,
+  phaseTransitions: [], ignitionTemperature: null, fuel: 0, burnRate: 0,
+  combustionHeat: 0, smokeYield: 0, moistureCapacity: 0, moistureAbsorption: 0, moistureDiffusivity: 0,
 } as const
 
 export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialProperties>> = {
   [MaterialId.Empty]: { ...inertProperties, phase: 'vacuum', mobility: 'none', density: 0, friction: 0 },
   [MaterialId.Sand]: {
     ...inertProperties, phase: 'solid', mobility: 'powder', density: 5, hardness: 0.25, friction: 0.7,
-    heatCapacity: 4, transitionHeat: 180, transitionProduct: MaterialId.Glass,
+    thermalConductivity: 24, heatCapacity: 4, emissivity: 40,
+    phaseTransitions: [{ direction: 'above', temperature: 900, product: MaterialId.Glass, latentHeat: 320 }],
+    moistureCapacity: 96, moistureAbsorption: 8, moistureDiffusivity: 18,
   },
   [MaterialId.Water]: {
     ...inertProperties, phase: 'liquid', mobility: 'fluid', density: 2, friction: 0.04, conductivity: true,
-    heatCapacity: 2, coolingRate: 4, transitionHeat: 180, transitionProduct: MaterialId.Steam,
+    thermalConductivity: 48, heatCapacity: 4, emissivity: 32,
+    phaseTransitions: [
+      { direction: 'above', temperature: 100, product: MaterialId.Steam, latentHeat: 180 },
+      { direction: 'below', temperature: -2, product: MaterialId.Ice, latentHeat: 120 },
+    ],
   },
   [MaterialId.Stone]: {
-    ...inertProperties, phase: 'solid', mobility: 'immovable', density: 10, hardness: 1, friction: 0.95, heatCapacity: 6,
+    ...inertProperties, phase: 'solid', mobility: 'immovable', density: 10, hardness: 1, friction: 0.95,
+    thermalConductivity: 72, heatCapacity: 8, emissivity: 72,
+    phaseTransitions: [{ direction: 'above', temperature: 1_000, product: MaterialId.Lava, latentHeat: 420 }],
   },
   [MaterialId.Wood]: {
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 8, hardness: 0.45, friction: 0.8,
-    heatOutput: 1, heatCapacity: 2, ignitionHeat: 80, flammability: 0.8, burnRate: 2, smokeYield: 0.035,
+    thermalConductivity: 20, heatCapacity: 3, emissivity: 220,
+    ignitionTemperature: 160, fuel: 255, burnRate: 3, combustionHeat: 18, smokeYield: 0.012,
+    moistureCapacity: 180, moistureAbsorption: 32, moistureDiffusivity: 24,
   },
   [MaterialId.Fire]: {
     ...inertProperties, phase: 'energy', mobility: 'rising', density: 0.02, friction: 0.05,
-    initialHeat: 255, heatOutput: 3, coolingRate: 0,
+    initialTemperature: 850, thermalConductivity: 48, emissivity: 255,
   },
   [MaterialId.Smoke]: {
-    ...inertProperties, phase: 'gas', mobility: 'rising', density: 0.01, friction: 0.12, initialHeat: 30, coolingRate: 2,
+    ...inertProperties, phase: 'gas', mobility: 'rising', density: 0.01, friction: 0.12,
+    initialTemperature: 120, thermalConductivity: 10, emissivity: 24,
   },
   [MaterialId.Oil]: {
     ...inertProperties, phase: 'liquid', mobility: 'fluid', density: 1, friction: 0.025,
-    heatOutput: 5, ignitionHeat: 22, flammability: 1, burnRate: 1, smokeYield: 0.018,
+    thermalConductivity: 12, heatCapacity: 3, emissivity: 72,
+    ignitionTemperature: 220, fuel: 255, burnRate: 2, combustionHeat: 14, smokeYield: 0.009,
   },
   [MaterialId.Plant]: {
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 4, hardness: 0.1, friction: 0.75,
-    heatOutput: 2, ignitionHeat: 30, flammability: 0.95, burnRate: 3, smokeYield: 0.015,
+    thermalConductivity: 12, heatCapacity: 2, emissivity: 80,
+    ignitionTemperature: 180, fuel: 180, burnRate: 4, combustionHeat: 10, smokeYield: 0.008,
+    moistureCapacity: 220, moistureAbsorption: 30, moistureDiffusivity: 28,
   },
   [MaterialId.Acid]: {
     ...inertProperties, phase: 'liquid', mobility: 'fluid', density: 2.5, friction: 0.055,
-    corrosiveness: 1, heatCapacity: 2, coolingRate: 3,
+    corrosiveness: 1, thermalConductivity: 40, heatCapacity: 4, emissivity: 32,
   },
   [MaterialId.Metal]: {
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 12, hardness: 0.9, friction: 0.98,
-    conductivity: true, heatCapacity: 5,
+    conductivity: true, thermalConductivity: 220, heatCapacity: 6, emissivity: 120,
   },
   [MaterialId.Lava]: {
     ...inertProperties, phase: 'liquid', mobility: 'fluid', density: 7, hardness: 0.15, friction: 0.11,
-    initialHeat: 255, heatOutput: 16, heatCapacity: 5, coolingRate: 0,
+    initialTemperature: 1_200, thermalConductivity: 68, heatCapacity: 8, emissivity: 230,
+    phaseTransitions: [{ direction: 'below', temperature: 850, product: MaterialId.Stone, latentHeat: 360 }],
   },
   [MaterialId.Ice]: {
     ...inertProperties, phase: 'solid', mobility: 'powder', density: 1.6, hardness: 0.3, friction: 0.86,
-    coolingRate: 8, transitionHeat: 45, transitionProduct: MaterialId.Water,
+    initialTemperature: -10, thermalConductivity: 76, heatCapacity: 5, emissivity: 48,
+    phaseTransitions: [{ direction: 'above', temperature: 2, product: MaterialId.Water, latentHeat: 120 }],
   },
   [MaterialId.Spark]: {
     ...inertProperties, phase: 'energy', mobility: 'rising', density: 0.005, friction: 0.02,
-    initialHeat: 255, heatOutput: 30, coolingRate: 0,
+    initialTemperature: 1_600, thermalConductivity: 80, emissivity: 255,
   },
   [MaterialId.Gunpowder]: {
     ...inertProperties, phase: 'solid', mobility: 'powder', density: 4, hardness: 0.15, friction: 0.62,
-    heatOutput: 8, ignitionHeat: 28, flammability: 1, burnRate: BURN_PROGRESS_LIMIT, smokeYield: 0.04,
+    thermalConductivity: 18, heatCapacity: 2, emissivity: 64,
+    ignitionTemperature: 160, fuel: 255, burnRate: 255, combustionHeat: 80, smokeYield: 0.02,
+    moistureCapacity: 255, moistureAbsorption: 28, moistureDiffusivity: 72,
   },
   [MaterialId.Glass]: {
-    ...inertProperties, phase: 'solid', mobility: 'immovable', density: 9, hardness: 0.85, friction: 0.92, heatCapacity: 5,
+    ...inertProperties, phase: 'solid', mobility: 'immovable', density: 9, hardness: 0.85, friction: 0.92,
+    thermalConductivity: 34, heatCapacity: 5, emissivity: 36,
   },
   [MaterialId.Steam]: {
     ...inertProperties, phase: 'gas', mobility: 'rising', density: 0.015, friction: 0.035,
-    initialHeat: 180, heatCapacity: 1, coolingRate: 8,
+    initialTemperature: 110, thermalConductivity: 14, heatCapacity: 2, emissivity: 20,
+    phaseTransitions: [{ direction: 'below', temperature: 90, product: MaterialId.Water, latentHeat: 140 }],
   },
 }
-
-export const WOOD_BURN_DURATION = Math.ceil(BURN_PROGRESS_LIMIT / MATERIAL_PROPERTIES[MaterialId.Wood].burnRate)
 
 function at(world: World, x: number, y: number): number { return y * world.width + x }
 function inBounds(world: World, x: number, y: number): boolean { return x >= 0 && x < world.width && y >= 0 && y < world.height }
@@ -98,53 +117,64 @@ function hasStatus(world: World, index: number, flag: number): boolean { return 
 function addStatus(world: World, index: number, flag: number): void { world.status[index] |= flag }
 function clearStatus(world: World, index: number, flag: number): void {
   world.status[index] &= ~flag
-  if (flag & (StatusFlag.Burning | StatusFlag.Charged)) world.state[index] = 0
-}
-
-function move(world: World, source: number, destination: number): void {
-  world.material[destination] = world.material[source]
-  world.state[destination] = world.state[source]
-  world.status[destination] = world.status[source]
-  world.heat[destination] = world.heat[source]
-  world.material[source] = MaterialId.Empty
-  world.state[source] = 0
-  world.status[source] = 0
-  world.heat[source] = 0
-  world.updatedAt[source] = world.tick
-  world.updatedAt[destination] = world.tick
+  if (flag & StatusFlag.Charged) world.state[index] = 0
 }
 
 function swap(world: World, first: number, second: number): void {
   const material = world.material[first]
   const state = world.state[first]
   const status = world.status[first]
-  const heat = world.heat[first]
+  const temperature = world.temperature[first]
+  const moisture = world.moisture[first]
+  const fuel = world.fuel[first]
+  const liquidMass = world.liquidMass[first]
+  const phaseProgress = world.phaseProgress[first]
   world.material[first] = world.material[second]
   world.state[first] = world.state[second]
   world.status[first] = world.status[second]
-  world.heat[first] = world.heat[second]
+  world.temperature[first] = world.temperature[second]
+  world.moisture[first] = world.moisture[second]
+  world.fuel[first] = world.fuel[second]
+  world.liquidMass[first] = world.liquidMass[second]
+  world.phaseProgress[first] = world.phaseProgress[second]
   world.material[second] = material
   world.state[second] = state
   world.status[second] = status
-  world.heat[second] = heat
+  world.temperature[second] = temperature
+  world.moisture[second] = moisture
+  world.fuel[second] = fuel
+  world.liquidMass[second] = liquidMass
+  world.phaseProgress[second] = phaseProgress
   world.updatedAt[first] = world.tick
   world.updatedAt[second] = world.tick
 }
 
-function empty(world: World, index: number): void {
+function move(world: World, source: number, destination: number): void { swap(world, source, destination) }
+
+export function emptyCell(world: World, index: number): void {
   world.material[index] = MaterialId.Empty
   world.state[index] = 0
   world.status[index] = 0
-  world.heat[index] = 0
+  world.moisture[index] = 0
+  world.fuel[index] = 0
+  world.liquidMass[index] = 0
+  world.phaseProgress[index] = 0
   world.updatedAt[index] = world.tick
 }
 
-function setMaterial(world: World, index: number, materialId: MaterialIdValue, preservedHeat = 0): void {
-  if (materialId === MaterialId.Empty) return empty(world, index)
+export function setMaterialCell(world: World, index: number, materialId: MaterialIdValue, temperature?: number): void {
+  if (materialId === MaterialId.Empty) return emptyCell(world, index)
   world.material[index] = materialId
   initializeTransientState(world, index, materialId)
-  world.heat[index] = Math.max(preservedHeat, MATERIAL_PROPERTIES[materialId].initialHeat)
+  if (temperature !== undefined) world.temperature[index] = Math.max(MINIMUM_TEMPERATURE, Math.min(MAXIMUM_TEMPERATURE, temperature))
   world.updatedAt[index] = world.tick
+}
+
+export function addTemperature(world: World, index: number, energy: number): void {
+  if (energy === 0) return
+  const properties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
+  const change = Math.trunc(energy / Math.max(1, properties.heatCapacity))
+  world.temperature[index] = Math.max(MINIMUM_TEMPERATURE, Math.min(MAXIMUM_TEMPERATURE, world.temperature[index] + change))
 }
 
 function neighbors(world: World, x: number, y: number): number[] {
@@ -158,44 +188,23 @@ function neighbors(world: World, x: number, y: number): number[] {
   return result
 }
 
-interface ReactionSideEffect {
-  product?: MaterialIdValue
-  addStatus?: number
-  clearStatus?: number
-  heatDelta?: number
-  resetState?: boolean
-}
-
+interface ReactionSideEffect { product?: MaterialIdValue }
 export interface MaterialReaction {
   materials: readonly [MaterialIdValue, MaterialIdValue]
   initiator: MaterialIdValue | readonly MaterialIdValue[]
-  instant?: boolean
-  chancePerSecond?: number
-  aStatusAll?: number
-  aStatusNone?: number
-  bStatusAll?: number
-  bStatusNone?: number
+  chancePerSecond: number
   scaleByCorrosion?: boolean
-  scaleByFlammability?: boolean
   a?: ReactionSideEffect
   b?: ReactionSideEffect
 }
 
+// Only identity-specific chemistry belongs here. Thermal, phase, moisture, combustion,
+// conductivity, and density interactions are handled by shared property-driven systems.
 export const MATERIAL_REACTIONS: readonly MaterialReaction[] = [
-  { materials: [MaterialId.Water, MaterialId.Fire], initiator: [MaterialId.Water, MaterialId.Fire], instant: true, a: { heatDelta: 45 }, b: { product: MaterialId.Empty } },
-  { materials: [MaterialId.Water, MaterialId.Wood], initiator: MaterialId.Water, instant: true, bStatusAll: StatusFlag.Burning, b: { clearStatus: StatusFlag.Burning, heatDelta: -60, resetState: true } },
-  { materials: [MaterialId.Water, MaterialId.Plant], initiator: MaterialId.Water, instant: true, bStatusAll: StatusFlag.Burning, b: { clearStatus: StatusFlag.Burning, heatDelta: -60, resetState: true } },
-  { materials: [MaterialId.Water, MaterialId.Oil], initiator: MaterialId.Water, instant: true, bStatusAll: StatusFlag.Burning, b: { clearStatus: StatusFlag.Burning, heatDelta: -60, resetState: true } },
-  { materials: [MaterialId.Water, MaterialId.Gunpowder], initiator: MaterialId.Water, instant: true, b: { addStatus: StatusFlag.Wet, clearStatus: StatusFlag.Burning, heatDelta: -80, resetState: true } },
-  { materials: [MaterialId.Fire, MaterialId.Wood], initiator: MaterialId.Fire, chancePerSecond: 0.03, bStatusNone: StatusFlag.Burning, scaleByFlammability: true, b: { product: MaterialId.Smoke } },
-  { materials: [MaterialId.Wood, MaterialId.Wood], initiator: MaterialId.Wood, chancePerSecond: 0.08, aStatusAll: StatusFlag.Burning, bStatusNone: StatusFlag.Burning, scaleByFlammability: true, b: { addStatus: StatusFlag.Burning, resetState: true } },
   { materials: [MaterialId.Acid, MaterialId.Plant], initiator: MaterialId.Acid, chancePerSecond: 0.85, scaleByCorrosion: true, b: { product: MaterialId.Empty } },
   { materials: [MaterialId.Acid, MaterialId.Wood], initiator: MaterialId.Acid, chancePerSecond: 0.15, scaleByCorrosion: true, b: { product: MaterialId.Empty } },
   { materials: [MaterialId.Acid, MaterialId.Metal], initiator: MaterialId.Acid, chancePerSecond: 0.45, scaleByCorrosion: true, b: { product: MaterialId.Empty } },
   { materials: [MaterialId.Acid, MaterialId.Water], initiator: MaterialId.Acid, chancePerSecond: 0.3, a: { product: MaterialId.Water } },
-  { materials: [MaterialId.Lava, MaterialId.Water], initiator: [MaterialId.Lava, MaterialId.Water], instant: true, a: { product: MaterialId.Stone }, b: { product: MaterialId.Steam } },
-  { materials: [MaterialId.Lava, MaterialId.Ice], initiator: [MaterialId.Lava, MaterialId.Ice], instant: true, a: { product: MaterialId.Stone }, b: { product: MaterialId.Steam } },
-  { materials: [MaterialId.Steam, MaterialId.Ice], initiator: [MaterialId.Steam, MaterialId.Ice], instant: true, a: { product: MaterialId.Water, heatDelta: -255 }, b: { product: MaterialId.Water, heatDelta: -255 } },
 ]
 
 function reactionKey(first: number, second: number): number { return (Math.min(first, second) << 8) | Math.max(first, second) }
@@ -205,17 +214,9 @@ for (const reaction of MATERIAL_REACTIONS) {
   REACTIONS_BY_PAIR.set(key, [...(REACTIONS_BY_PAIR.get(key) ?? []), reaction])
 }
 
-function statusMatches(status: number, all = 0, none = 0): boolean { return (status & all) === all && (status & none) === 0 }
 function applyReactionEffect(world: World, index: number, effect: ReactionSideEffect | undefined): void {
-  if (!effect) return
-  const previousHeat = world.heat[index]
-  if (effect.product !== undefined) setMaterial(world, index, effect.product, previousHeat)
-  if (world.material[index] === MaterialId.Empty) return
-  if (effect.addStatus) addStatus(world, index, effect.addStatus)
-  if (effect.clearStatus) clearStatus(world, index, effect.clearStatus)
-  if (effect.resetState) world.state[index] = 0
-  if (effect.heatDelta) world.heat[index] = Math.max(0, Math.min(255, world.heat[index] + effect.heatDelta))
-  world.updatedAt[index] = world.tick
+  if (effect?.product === undefined) return
+  setMaterialCell(world, index, effect.product, world.temperature[index])
 }
 
 export function reactMaterialPair(world: World, actorIndex: number, targetIndex: number): boolean {
@@ -223,29 +224,24 @@ export function reactMaterialPair(world: World, actorIndex: number, targetIndex:
   const target = world.material[targetIndex] as MaterialIdValue
   const reactions = REACTIONS_BY_PAIR.get(reactionKey(actor, target))
   if (!reactions) return false
-  let reacted = false
   for (const reaction of reactions) {
     const initiators = Array.isArray(reaction.initiator) ? reaction.initiator : [reaction.initiator]
     if (!initiators.includes(actor)) continue
     const sameOrder = reaction.materials[0] === actor && reaction.materials[1] === target
     const aIndex = sameOrder ? actorIndex : targetIndex
     const bIndex = sameOrder ? targetIndex : actorIndex
-    if (!statusMatches(world.status[aIndex], reaction.aStatusAll, reaction.aStatusNone)) continue
-    if (!statusMatches(world.status[bIndex], reaction.bStatusAll, reaction.bStatusNone)) continue
-    let probability = reaction.instant ? 1 : 1 - Math.pow(1 - (reaction.chancePerSecond ?? 0), 1 / 60)
+    let probability = 1 - Math.pow(1 - reaction.chancePerSecond, 1 / 60)
     if (reaction.scaleByCorrosion) {
       const aProperties = MATERIAL_PROPERTIES[world.material[aIndex] as MaterialIdValue]
       const bProperties = MATERIAL_PROPERTIES[world.material[bIndex] as MaterialIdValue]
       probability *= Math.max(0, Math.min(1, aProperties.corrosiveness - bProperties.hardness * 0.5))
     }
-    if (reaction.scaleByFlammability) probability *= MATERIAL_PROPERTIES[world.material[bIndex] as MaterialIdValue].flammability
-    if (probability < 1 && !chance(world, probability)) continue
+    if (!chance(world, probability)) continue
     applyReactionEffect(world, aIndex, reaction.a)
     applyReactionEffect(world, bIndex, reaction.b)
-    reacted = true
-    if (world.material[actorIndex] !== actor || world.material[targetIndex] !== target) break
+    return true
   }
-  return reacted
+  return false
 }
 
 function reactWithNeighbors(world: World, actorIndex: number, x: number, y: number): void {
@@ -254,21 +250,6 @@ function reactWithNeighbors(world: World, actorIndex: number, x: number, y: numb
       if ((offsetX === 0 && offsetY === 0) || !inBounds(world, x + offsetX, y + offsetY)) continue
       reactMaterialPair(world, actorIndex, at(world, x + offsetX, y + offsetY))
       if (world.material[actorIndex] === MaterialId.Empty) return
-    }
-  }
-}
-
-function addHeat(world: World, index: number, amount: number): void {
-  if (world.material[index] === MaterialId.Empty || amount <= 0) return
-  const capacity = Math.max(1, MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue].heatCapacity)
-  world.heat[index] = Math.min(255, world.heat[index] + Math.max(1, Math.ceil(amount / capacity)))
-}
-function emitHeat(world: World, x: number, y: number, amount: number): void {
-  if (amount <= 0) return
-  for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
-    for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
-      if ((offsetX === 0 && offsetY === 0) || !inBounds(world, x + offsetX, y + offsetY)) continue
-      addHeat(world, at(world, x + offsetX, y + offsetY), amount)
     }
   }
 }
@@ -294,48 +275,49 @@ function emitSmoke(world: World, x: number, y: number): void {
     if (!inBounds(world, targetX, targetY)) continue
     const target = at(world, targetX, targetY)
     if (world.material[target] !== MaterialId.Empty) continue
-    setMaterial(world, target, MaterialId.Smoke)
+    setMaterialCell(world, target, MaterialId.Smoke)
     break
   }
 }
 
 function explodeGunpowder(world: World, index: number, x: number, y: number): void {
-  setMaterial(world, index, MaterialId.Fire)
+  const originTemperature = Math.max(world.temperature[index], MATERIAL_PROPERTIES[MaterialId.Fire].initialTemperature)
+  setMaterialCell(world, index, MaterialId.Fire, originTemperature)
   const radius = 4
   for (let targetY = Math.max(0, y - radius); targetY <= Math.min(world.height - 1, y + radius); targetY += 1) {
     for (let targetX = Math.max(0, x - radius); targetX <= Math.min(world.width - 1, x + radius); targetX += 1) {
-      if ((targetX - x) ** 2 + (targetY - y) ** 2 > radius * radius || (targetX === x && targetY === y)) continue
+      const distanceSquared = (targetX - x) ** 2 + (targetY - y) ** 2
+      if (distanceSquared > radius * radius || distanceSquared === 0) continue
       const target = at(world, targetX, targetY)
-      const material = world.material[target] as MaterialIdValue
-      if (material === MaterialId.Gunpowder) {
-        clearStatus(world, target, StatusFlag.Wet)
-        addStatus(world, target, StatusFlag.Burning)
-        world.heat[target] = Math.max(world.heat[target], MATERIAL_PROPERTIES[MaterialId.Gunpowder].ignitionHeat ?? 0)
-        world.updatedAt[target] = world.tick
-      } else if (MATERIAL_PROPERTIES[material].flammability > 0) addHeat(world, target, 90)
-      else if (material === MaterialId.Empty && chance(world, 0.025)) setMaterial(world, target, MaterialId.Fire)
+      const distance = Math.sqrt(distanceSquared)
+      addTemperature(world, target, Math.round(1_000 * (1 - distance / (radius + 0.5))))
+      if (world.material[target] === MaterialId.Empty && distance <= 2 && chance(world, 0.025)) {
+        setMaterialCell(world, target, MaterialId.Fire, world.temperature[target])
+      }
     }
   }
 }
 
 function updateCombustion(world: World, index: number, x: number, y: number, materialId: MaterialIdValue): boolean {
   if (!hasStatus(world, index, StatusFlag.Burning)) return false
-  if (hasStatus(world, index, StatusFlag.Wet)) { clearStatus(world, index, StatusFlag.Burning); return false }
   if (materialId === MaterialId.Gunpowder) { explodeGunpowder(world, index, x, y); return true }
   const properties = MATERIAL_PROPERTIES[materialId]
-  const progress = world.state[index] + properties.burnRate
-  if (progress >= BURN_PROGRESS_LIMIT) { empty(world, index); return true }
-  world.state[index] = progress
-  world.heat[index] = Math.max(world.heat[index], properties.ignitionHeat ?? 0)
-  const heatInterval = materialId === MaterialId.Oil ? 1 : materialId === MaterialId.Plant ? 3 : 8
-  if (world.tick % heatInterval === 0) emitHeat(world, x, y, properties.heatOutput)
+  const saturation = properties.moistureCapacity > 0 ? world.moisture[index] / properties.moistureCapacity : 0
+  if (saturation >= 0.35 || world.temperature[index] < (properties.ignitionTemperature ?? 0) * 0.55) {
+    clearStatus(world, index, StatusFlag.Burning)
+    return false
+  }
+  const consumed = Math.min(world.fuel[index], properties.burnRate)
+  if (consumed <= 0) { emptyCell(world, index); return true }
+  world.fuel[index] -= consumed
+  addTemperature(world, index, properties.combustionHeat * consumed)
   if (chance(world, properties.smokeYield)) emitSmoke(world, x, y)
+  if (world.fuel[index] === 0) { emptyCell(world, index); return true }
   return false
 }
 
 function updateWood(world: World, context: UpdateContext): void {
-  reactWithNeighbors(world, context.index, context.x, context.y)
-  if (updateCombustion(world, context.index, context.x, context.y, MaterialId.Wood)) return
+  updateCombustion(world, context.index, context.x, context.y, MaterialId.Wood)
   world.updatedAt[context.index] = world.tick
 }
 
@@ -355,9 +337,9 @@ function updatePlant(world: World, context: UpdateContext): void {
       if (!inBounds(world, targetX, targetY)) continue
       const target = at(world, targetX, targetY)
       if (world.material[target] !== MaterialId.Empty) continue
-      setMaterial(world, target, MaterialId.Plant)
+      setMaterialCell(world, target, MaterialId.Plant)
       world.state[index] = 0
-      if (chance(world, 0.1)) empty(world, nearbyWater)
+      if (chance(world, 0.1)) emptyCell(world, nearbyWater)
       break
     }
   }
@@ -378,12 +360,7 @@ function updatePowder(world: World, context: UpdateContext, materialId: Material
 function updateSand(world: World, context: UpdateContext): void { updatePowder(world, context, MaterialId.Sand) }
 function updateIce(world: World, context: UpdateContext): void { updatePowder(world, context, MaterialId.Ice) }
 function updateGunpowder(world: World, context: UpdateContext): void {
-  const { index, x, y } = context
-  if (hasStatus(world, index, StatusFlag.Wet)) {
-    const touchingWater = neighbors(world, x, y).some((target) => world.material[target] === MaterialId.Water)
-    if (!touchingWater && chance(world, 1 - Math.pow(1 - 0.35, 1 / 60))) clearStatus(world, index, StatusFlag.Wet)
-  }
-  if (updateCombustion(world, index, x, y, MaterialId.Gunpowder)) return
+  if (updateCombustion(world, context.index, context.x, context.y, MaterialId.Gunpowder)) return
   updatePowder(world, context, MaterialId.Gunpowder)
 }
 
@@ -406,10 +383,14 @@ function fluidPath(world: World, x: number, y: number, direction: -1 | 1, maximu
   return path
 }
 
+function warmNeighbors(world: World, x: number, y: number, energy: number): void {
+  for (const target of neighbors(world, x, y)) addTemperature(world, target, energy)
+}
+
 function propagateCharge(world: World, index: number, x: number, y: number): void {
   if (!hasStatus(world, index, StatusFlag.Charged)) return
   const remaining = world.state[index]
-  emitHeat(world, x, y, 12)
+  warmNeighbors(world, x, y, 24)
   clearStatus(world, index, StatusFlag.Charged)
   if (remaining <= 1) return
   const conductor = neighbors(world, x, y).find((target) => {
@@ -424,7 +405,7 @@ function propagateCharge(world: World, index: number, x: number, y: number): voi
 
 function updateFluid(world: World, context: UpdateContext, materialId: MaterialIdValue): void {
   const { index, x, y } = context
-  reactWithNeighbors(world, index, x, y)
+  if (materialId === MaterialId.Acid) reactWithNeighbors(world, index, x, y)
   if (world.material[index] !== materialId) return
   if (MATERIAL_PROPERTIES[materialId].conductivity) propagateCharge(world, index, x, y)
   if (materialId === MaterialId.Oil && updateCombustion(world, index, x, y, materialId)) return
@@ -454,21 +435,16 @@ function updateFluid(world: World, context: UpdateContext, materialId: MaterialI
 function updateWater(world: World, context: UpdateContext): void { updateFluid(world, context, MaterialId.Water) }
 function updateOil(world: World, context: UpdateContext): void { updateFluid(world, context, MaterialId.Oil) }
 function updateAcid(world: World, context: UpdateContext): void { updateFluid(world, context, MaterialId.Acid) }
-function updateLava(world: World, context: UpdateContext): void {
-  emitHeat(world, context.x, context.y, MATERIAL_PROPERTIES[MaterialId.Lava].heatOutput)
-  updateFluid(world, context, MaterialId.Lava)
-}
+function updateLava(world: World, context: UpdateContext): void { updateFluid(world, context, MaterialId.Lava) }
 function updateMetal(world: World, context: UpdateContext): void {
   propagateCharge(world, context.index, context.x, context.y)
   world.updatedAt[context.index] = world.tick
 }
 
 function updateFire(world: World, { index, x, y }: UpdateContext): void {
-  emitHeat(world, x, y, MATERIAL_PROPERTIES[MaterialId.Fire].heatOutput)
-  reactWithNeighbors(world, index, x, y)
-  if (world.material[index] === MaterialId.Empty) return
+  if (world.temperature[index] < 180) return emptyCell(world, index)
   const lifetime = world.state[index] || randomInt(world, FIRE_LIFETIME_MIN, FIRE_LIFETIME_MAX)
-  if (lifetime <= 1) return empty(world, index)
+  if (lifetime <= 1) return emptyCell(world, index)
   world.state[index] = lifetime - 1
   for (const [targetX, targetY] of driftingVerticalAttempts(world, x, y, -1, driftChance(MaterialId.Fire))) {
     if (!inBounds(world, targetX, targetY)) continue
@@ -480,7 +456,7 @@ function updateFire(world: World, { index, x, y }: UpdateContext): void {
 
 function updateSmoke(world: World, { index, x, y }: UpdateContext): void {
   const lifetime = world.state[index] || randomInt(world, SMOKE_LIFETIME_MIN, SMOKE_LIFETIME_MAX)
-  if (lifetime <= 1) return empty(world, index)
+  if (lifetime <= 1) return emptyCell(world, index)
   world.state[index] = lifetime - 1
   if (world.tick % 2 === 0) {
     for (const [targetX, targetY] of driftingVerticalAttempts(world, x, y, -1, driftChance(MaterialId.Smoke))) {
@@ -493,14 +469,8 @@ function updateSmoke(world: World, { index, x, y }: UpdateContext): void {
 }
 
 function updateSteam(world: World, { index, x, y }: UpdateContext): void {
-  reactWithNeighbors(world, index, x, y)
-  if (world.material[index] !== MaterialId.Steam) return
   const lifetime = world.state[index] || randomInt(world, STEAM_LIFETIME_MIN, STEAM_LIFETIME_MAX)
-  if (lifetime <= 1) {
-    if (world.heat[index] <= 60) setMaterial(world, index, MaterialId.Water, world.heat[index])
-    else empty(world, index)
-    return
-  }
+  if (lifetime <= 1) return emptyCell(world, index)
   world.state[index] = lifetime - 1
   for (const [targetX, targetY] of driftingVerticalAttempts(world, x, y, -1, driftChance(MaterialId.Steam))) {
     if (!inBounds(world, targetX, targetY)) continue
@@ -511,17 +481,16 @@ function updateSteam(world: World, { index, x, y }: UpdateContext): void {
 }
 
 function updateSpark(world: World, { index, x, y }: UpdateContext): void {
-  emitHeat(world, x, y, MATERIAL_PROPERTIES[MaterialId.Spark].heatOutput)
   const conductor = neighbors(world, x, y).find((target) => MATERIAL_PROPERTIES[world.material[target] as MaterialIdValue].conductivity)
   if (conductor !== undefined) {
     addStatus(world, conductor, StatusFlag.Charged)
     world.state[conductor] = world.material[conductor] === MaterialId.Metal ? 20 : 8
     world.updatedAt[conductor] = world.tick
-    empty(world, index)
+    emptyCell(world, index)
     return
   }
   const lifetime = world.state[index] || randomInt(world, 3, 6)
-  if (lifetime <= 1) return empty(world, index)
+  if (lifetime <= 1) return emptyCell(world, index)
   world.state[index] = lifetime - 1
   for (const [targetX, targetY] of driftingVerticalAttempts(world, x, y, -1, driftChance(MaterialId.Spark))) {
     if (!inBounds(world, targetX, targetY)) continue
@@ -529,26 +498,6 @@ function updateSpark(world: World, { index, x, y }: UpdateContext): void {
     if (world.material[target] === MaterialId.Empty) return move(world, index, target)
   }
   world.updatedAt[index] = world.tick
-}
-
-export function updateThermalWorld(world: World): void {
-  const coolThisTick = world.tick % 4 === 0
-  for (let index = 0; index < world.material.length; index += 1) {
-    let materialId = world.material[index] as MaterialIdValue
-    if (materialId === MaterialId.Empty) { world.heat[index] = 0; world.status[index] = 0; continue }
-    let properties = MATERIAL_PROPERTIES[materialId]
-    if (coolThisTick && properties.coolingRate > 0 && world.heat[index] > 0) world.heat[index] = Math.max(0, world.heat[index] - properties.coolingRate)
-    if (properties.transitionHeat !== null && properties.transitionProduct !== null && world.heat[index] >= properties.transitionHeat) {
-      const retainedHeat = world.heat[index]
-      setMaterial(world, index, properties.transitionProduct as MaterialIdValue, retainedHeat)
-      materialId = world.material[index] as MaterialIdValue
-      properties = MATERIAL_PROPERTIES[materialId]
-    }
-    if (properties.ignitionHeat !== null && world.heat[index] >= properties.ignitionHeat && !hasStatus(world, index, StatusFlag.Burning) && !hasStatus(world, index, StatusFlag.Wet)) {
-      addStatus(world, index, StatusFlag.Burning)
-      world.state[index] = 0
-    }
-  }
 }
 
 export const MATERIALS = [
@@ -577,8 +526,12 @@ export const PAINTABLE_MATERIALS = MATERIALS.filter((material) => material.paint
 export function initializeTransientState(world: World, index: number, materialId: number): void {
   world.state[index] = 0
   world.status[index] = 0
+  world.moisture[index] = 0
+  world.phaseProgress[index] = 0
   const properties = MATERIAL_PROPERTIES[materialId as MaterialIdValue]
-  world.heat[index] = properties?.initialHeat ?? 0
+  world.temperature[index] = properties?.initialTemperature ?? AMBIENT_TEMPERATURE
+  world.fuel[index] = properties?.fuel ?? 0
+  world.liquidMass[index] = properties?.phase === 'liquid' ? 255 : 0
   if (materialId === MaterialId.Fire) world.state[index] = randomInt(world, FIRE_LIFETIME_MIN, FIRE_LIFETIME_MAX)
   else if (materialId === MaterialId.Smoke) world.state[index] = randomInt(world, SMOKE_LIFETIME_MIN, SMOKE_LIFETIME_MAX)
   else if (materialId === MaterialId.Steam) world.state[index] = randomInt(world, STEAM_LIFETIME_MIN, STEAM_LIFETIME_MAX)

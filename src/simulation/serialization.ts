@@ -1,8 +1,9 @@
-import { MATERIAL_BY_ID, MaterialId, StatusFlag } from './materials'
+import { AMBIENT_TEMPERATURE } from './constants'
+import { MATERIAL_BY_ID, MATERIAL_PROPERTIES, MaterialId, type MaterialIdValue, StatusFlag } from './materials'
 import { CELL_COUNT, GRID_HEIGHT, GRID_WIDTH, type Snapshot } from './types'
 
 export const SAVE_FORMAT = 'kinetic-pixels'
-export const SAVE_VERSION = 3
+export const SAVE_VERSION = 4
 export const MAX_IMPORT_BYTES = 2_000_000
 
 interface SaveFileBase {
@@ -23,14 +24,26 @@ export interface SaveFileV2 extends SaveFileBase {
 }
 
 export interface SaveFileV3 extends SaveFileBase {
-  version: typeof SAVE_VERSION
+  version: 3
   simulation: SaveFileV2['simulation'] & {
     status: string
     heat: string
   }
 }
 
-export type SaveFile = SaveFileV2 | SaveFileV3
+export interface SaveFileV4 extends SaveFileBase {
+  version: typeof SAVE_VERSION
+  simulation: SaveFileV2['simulation'] & {
+    status: string
+    temperature: string
+    moisture: string
+    fuel: string
+    liquidMass: string
+    phaseProgress: string
+  }
+}
+
+export type SaveFile = SaveFileV2 | SaveFileV3 | SaveFileV4
 
 const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 const LEGACY_BURNING_FLAG = 0x8000
@@ -69,25 +82,39 @@ export function base64ToBytes(value: string): Uint8Array {
   return output
 }
 
-function stateToBytes(state: Uint16Array): Uint8Array {
-  const bytes = new Uint8Array(state.length * 2)
+function uint16ToBytes(values: Uint16Array): Uint8Array {
+  const bytes = new Uint8Array(values.length * 2)
   const view = new DataView(bytes.buffer)
-  state.forEach((value, index) => view.setUint16(index * 2, value, true))
+  values.forEach((value, index) => view.setUint16(index * 2, value, true))
   return bytes
 }
 
-function bytesToState(bytes: Uint8Array): Uint16Array {
-  const state = new Uint16Array(bytes.length / 2)
+function bytesToUint16(bytes: Uint8Array): Uint16Array {
+  const values = new Uint16Array(bytes.length / 2)
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  for (let index = 0; index < state.length; index += 1) state[index] = view.getUint16(index * 2, true)
-  return state
+  for (let index = 0; index < values.length; index += 1) values[index] = view.getUint16(index * 2, true)
+  return values
+}
+
+function int16ToBytes(values: Int16Array): Uint8Array {
+  const bytes = new Uint8Array(values.length * 2)
+  const view = new DataView(bytes.buffer)
+  values.forEach((value, index) => view.setInt16(index * 2, value, true))
+  return bytes
+}
+
+function bytesToInt16(bytes: Uint8Array): Int16Array {
+  const values = new Int16Array(bytes.length / 2)
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  for (let index = 0; index < values.length; index += 1) values[index] = view.getInt16(index * 2, true)
+  return values
 }
 
 export function sanitizeSaveName(value: string, fallback: string): string {
   return value.trim().slice(0, 24) || fallback
 }
 
-export function serializeSnapshot(snapshot: Snapshot, name: string, savedAt = new Date().toISOString()): SaveFileV3 {
+export function serializeSnapshot(snapshot: Snapshot, name: string, savedAt = new Date().toISOString()): SaveFileV4 {
   return {
     format: SAVE_FORMAT,
     version: SAVE_VERSION,
@@ -97,9 +124,13 @@ export function serializeSnapshot(snapshot: Snapshot, name: string, savedAt = ne
       seed: snapshot.seed,
       randomState: snapshot.randomState,
       material: bytesToBase64(snapshot.material),
-      state: bytesToBase64(stateToBytes(snapshot.state)),
+      state: bytesToBase64(uint16ToBytes(snapshot.state)),
       status: bytesToBase64(snapshot.status),
-      heat: bytesToBase64(snapshot.heat),
+      temperature: bytesToBase64(int16ToBytes(snapshot.temperature)),
+      moisture: bytesToBase64(snapshot.moisture),
+      fuel: bytesToBase64(snapshot.fuel),
+      liquidMass: bytesToBase64(snapshot.liquidMass),
+      phaseProgress: bytesToBase64(uint16ToBytes(snapshot.phaseProgress)),
     },
     metadata: { name: name.slice(0, 24), savedAt },
   }
@@ -122,20 +153,46 @@ function validateByteField(value: unknown, label: string): Uint8Array {
   return bytes
 }
 
+function validateWordBytes(value: unknown, label: string): Uint8Array {
+  if (typeof value !== 'string') throw new Error('Save data is missing')
+  const bytes = base64ToBytes(value)
+  if (bytes.length !== CELL_COUNT * 2) throw new Error(`${label} data length is invalid`)
+  return bytes
+}
+
+function migrateLegacyFields(material: Uint8Array, status: Uint8Array, legacyHeat: Uint8Array): Pick<Snapshot, 'temperature' | 'moisture' | 'fuel' | 'liquidMass' | 'phaseProgress'> {
+  const temperature = new Int16Array(CELL_COUNT)
+  const moisture = new Uint8Array(CELL_COUNT)
+  const fuel = new Uint8Array(CELL_COUNT)
+  const liquidMass = new Uint8Array(CELL_COUNT)
+  const phaseProgress = new Uint16Array(CELL_COUNT)
+  temperature.fill(AMBIENT_TEMPERATURE)
+  for (let index = 0; index < material.length; index += 1) {
+    const materialId = material[index] as MaterialIdValue
+    const materialProperties = MATERIAL_PROPERTIES[materialId]
+    temperature[index] = legacyHeat[index] > 0
+      ? AMBIENT_TEMPERATURE + Math.round(legacyHeat[index] * 830 / 255)
+      : materialProperties.initialTemperature
+    fuel[index] = materialProperties.fuel
+    liquidMass[index] = materialProperties.phase === 'liquid' ? 255 : 0
+    if (status[index] & StatusFlag.Wet) moisture[index] = materialProperties.moistureCapacity
+    if (status[index] & StatusFlag.Burning) {
+      temperature[index] = Math.max(temperature[index], materialProperties.ignitionTemperature ?? AMBIENT_TEMPERATURE)
+    }
+  }
+  return { temperature, moisture, fuel, liquidMass, phaseProgress }
+}
+
 export function parseSave(input: unknown): { file: SaveFile; snapshot: Snapshot } {
   const root = record(input)
   if (root.format !== SAVE_FORMAT) throw new Error('Not a Kinetic Pixels save')
-  if (root.version !== 2 && root.version !== SAVE_VERSION) throw new Error('Unsupported save version')
+  if (root.version !== 2 && root.version !== 3 && root.version !== SAVE_VERSION) throw new Error('Unsupported save version')
   const grid = record(root.grid)
   if (grid.width !== GRID_WIDTH || grid.height !== GRID_HEIGHT) throw new Error('Save grid dimensions do not match')
   const simulation = record(root.simulation)
   const material = validateByteField(simulation.material, 'Material')
-  if (typeof simulation.state !== 'string') throw new Error('Save data is missing')
-  const stateBytes = base64ToBytes(simulation.state)
-  if (stateBytes.length !== CELL_COUNT * 2) throw new Error('State data length is invalid')
-  const state = bytesToState(stateBytes)
-  const status = root.version === SAVE_VERSION ? validateByteField(simulation.status, 'Status') : new Uint8Array(CELL_COUNT)
-  const heat = root.version === SAVE_VERSION ? validateByteField(simulation.heat, 'Heat') : new Uint8Array(CELL_COUNT)
+  const state = bytesToUint16(validateWordBytes(simulation.state, 'State'))
+  const status = root.version === 2 ? new Uint8Array(CELL_COUNT) : validateByteField(simulation.status, 'Status')
 
   for (let index = 0; index < material.length; index += 1) {
     if (!MATERIAL_BY_ID.has(material[index])) throw new Error('Save contains an unknown material')
@@ -143,6 +200,20 @@ export function parseSave(input: unknown): { file: SaveFile; snapshot: Snapshot 
       status[index] |= StatusFlag.Burning
       state[index] &= LEGACY_PROGRESS_MASK
     }
+  }
+
+  let fields: Pick<Snapshot, 'temperature' | 'moisture' | 'fuel' | 'liquidMass' | 'phaseProgress'>
+  if (root.version === SAVE_VERSION) {
+    fields = {
+      temperature: bytesToInt16(validateWordBytes(simulation.temperature, 'Temperature')),
+      moisture: validateByteField(simulation.moisture, 'Moisture'),
+      fuel: validateByteField(simulation.fuel, 'Fuel'),
+      liquidMass: validateByteField(simulation.liquidMass, 'Liquid mass'),
+      phaseProgress: bytesToUint16(validateWordBytes(simulation.phaseProgress, 'Phase progress')),
+    }
+  } else {
+    const legacyHeat = root.version === 3 ? validateByteField(simulation.heat, 'Heat') : new Uint8Array(CELL_COUNT)
+    fields = migrateLegacyFields(material, status, legacyHeat)
   }
 
   const metadata = record(root.metadata)
@@ -158,7 +229,7 @@ export function parseSave(input: unknown): { file: SaveFile; snapshot: Snapshot 
     material,
     state,
     status,
-    heat,
+    ...fields,
   }
   return { file: root as unknown as SaveFile, snapshot }
 }

@@ -27,7 +27,7 @@ same way.
 ## Controls
 
 - Choose Sand, Water, Stone, Wood, Fire, Oil, Plant, Acid, Metal, Lava, Ice,
-  Spark, or Gunpowder from the Elements rail. Glass, Smoke, and Steam are created by reactions.
+  Spark, or Gunpowder from the Elements rail. Glass, Smoke, and Steam are created by phase changes and combustion.
 - Click, hold, or drag on the field to paint; a held pointer continually reapplies the brush.
   The first field click starts the simulation and paints.
 - `Space` toggles Play/Pause.
@@ -50,16 +50,20 @@ while paused.
 
 The simulation core under `src/simulation/` is independent of React, workers, and rendering.
 Material definitions use stable numeric IDs backed by one exported physical-properties table.
-Each entry declares phase, mobility, density, hardness, friction, conductivity, corrosiveness,
-heat behavior, flammability, burn rate, and smoke yield. Movement, displacement, corrosion,
-conductivity, ignition, and thermal transitions consume those properties.
+Each entry declares movement, density, thermal conductivity and capacity, emissivity, phase
+transitions, combustion, moisture, conductivity, and corrosion properties.
 
-Cross-material behavior lives in an exported sparse pair registry. Only meaningful pairs are
-listed, with explicit initiators, status requirements, real-time probability, and effects.
-Parallel typed-array channels keep material identity, progress/lifetime, temporary statuses,
-heat, and per-tick update markers separate. A seeded xorshift PRNG is the only source of
-simulation randomness. Rendering variation is a stable coordinate/material hash rather than
-visual noise.
+Temperature persists in every cell, including empty air. A shared solver conducts it across
+material boundaries, radiates it from exposed hot surfaces, and drives latent phase transitions
+and ignition. A second shared solver absorbs and diffuses moisture through porous materials,
+spends finite Water mass, and consumes heat while drying. Combustion consumes fuel and feeds
+heat back into the same thermal field, so fire spread emerges from temperature rather than
+Wood-to-Wood or Fire-to-Wood pair rules.
+
+The sparse pair registry is reserved for identity-specific chemistry: currently Acid corrosion
+and dilution. Parallel typed-array channels keep material identity, lifetime/growth/charge,
+temporary statuses, temperature, moisture, fuel, liquid mass, phase progress, and per-tick
+update markers separate. A seeded xorshift PRNG is the only source of simulation randomness.
 
 Further invariants and the worker contract are recorded in [docs/architecture.md](docs/architecture.md).
 The complete current element-by-element behavior map is recorded in
@@ -73,12 +77,13 @@ Local slots use exactly these versioned keys:
 - `kinetic-pixels:save:b`
 - `kinetic-pixels:save:c`
 
-A save records the material, state, status, and heat grids, tick, initial seed, current PRNG state,
-format metadata, name, and timestamp. It does not record the selected tool, radius, dialog
-state, play state, startup hint, or pointer preview.
+A save records the material, state, status, temperature, moisture, fuel, liquid-mass, and
+phase-progress grids, tick, initial seed, current PRNG state, format metadata, name, and timestamp.
+It does not record the selected tool, radius, dialog state, play state, startup hint, or pointer preview.
 
-JSON files use format `kinetic-pixels`, version `3`, fixed 192 × 180 dimensions, and Base64
-typed-array bytes. Version 2 saves remain loadable and migrate legacy burning state automatically.
+JSON files use format `kinetic-pixels`, version `4`, fixed 192 × 180 dimensions, and Base64
+typed-array bytes. Version 2 and 3 saves remain loadable and migrate legacy burning, Wet, and
+0–255 heat state into the new fuel, moisture, and Celsius-like temperature channels.
 Imports are size-limited and fully validated before replacing the live world; bad JSON, unknown
 materials, unsupported versions, invalid dimensions, and decoded-length mismatches leave the
 current world untouched.
@@ -114,11 +119,11 @@ Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1
 
 | 192 × 180 scenario | Mean tick | Throughput |
 | --- | ---: | ---: |
-| Fully occupied stationary grid | 1.27 ms | 786.64 ticks/s |
-| Falling Sand | 4.78 ms | 209.20 ticks/s |
-| Water spread | 6.88 ms | 145.35 ticks/s |
-| Fully occupied Lava / heat | 13.60 ms | 73.53 ticks/s |
-| Burning Wood / Fire / Smoke | 8.56 ms | 116.78 ticks/s |
+| Fully occupied stationary grid | 2.81 ms | 355.59 ticks/s |
+| Falling Sand | 6.59 ms | 151.68 ticks/s |
+| Water spread | 5.12 ms | 195.48 ticks/s |
+| Fully occupied Lava / thermal field | 8.98 ms | 111.39 ticks/s |
+| Burning Wood / Fire / Smoke | 11.74 ms | 85.15 ticks/s |
 
 These figures are descriptive rather than CI thresholds because shared runners have noisy timing.
 

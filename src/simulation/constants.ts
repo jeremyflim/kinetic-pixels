@@ -1,0 +1,5 @@
+export const AMBIENT_TEMPERATURE = 20
+export const MINIMUM_TEMPERATURE = -200
+export const MAXIMUM_TEMPERATURE = 2_000
+export const THERMAL_INTERVAL = 3
+export const MOISTURE_INTERVAL = 6

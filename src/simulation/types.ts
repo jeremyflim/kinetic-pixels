@@ -8,8 +8,14 @@ export interface World {
   material: Uint8Array
   state: Uint16Array
   status: Uint8Array
-  heat: Uint8Array
+  temperature: Int16Array
+  moisture: Uint8Array
+  fuel: Uint8Array
+  liquidMass: Uint8Array
+  phaseProgress: Uint16Array
   updatedAt: Uint32Array
+  temperatureDelta: Int32Array
+  moistureDelta: Int16Array
   tick: number
   seed: number
   randomState: number
@@ -27,6 +33,13 @@ export type MaterialUpdateFunction = (world: World, context: UpdateContext) => v
 export type MaterialPhase = 'vacuum' | 'solid' | 'liquid' | 'gas' | 'energy'
 export type MaterialMobility = 'none' | 'immovable' | 'powder' | 'fluid' | 'rising'
 
+export interface PhaseTransition {
+  direction: 'above' | 'below'
+  temperature: number
+  product: number
+  latentHeat: number
+}
+
 export interface MaterialProperties {
   phase: MaterialPhase
   mobility: MaterialMobility
@@ -35,16 +48,19 @@ export interface MaterialProperties {
   friction: number
   conductivity: boolean
   corrosiveness: number
-  initialHeat: number
-  heatOutput: number
+  initialTemperature: number
+  thermalConductivity: number
   heatCapacity: number
-  coolingRate: number
-  ignitionHeat: number | null
-  transitionHeat: number | null
-  transitionProduct: number | null
-  flammability: number
+  emissivity: number
+  phaseTransitions: readonly PhaseTransition[]
+  ignitionTemperature: number | null
+  fuel: number
   burnRate: number
+  combustionHeat: number
   smokeYield: number
+  moistureCapacity: number
+  moistureAbsorption: number
+  moistureDiffusivity: number
 }
 
 export interface MaterialDefinition {
@@ -66,5 +82,9 @@ export interface Snapshot {
   material: Uint8Array
   state: Uint16Array
   status: Uint8Array
-  heat: Uint8Array
+  temperature: Int16Array
+  moisture: Uint8Array
+  fuel: Uint8Array
+  liquidMass: Uint8Array
+  phaseProgress: Uint16Array
 }

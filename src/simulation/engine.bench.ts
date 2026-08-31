@@ -1,6 +1,6 @@
 import { bench, describe } from 'vitest'
 import { createWorld, stepWorld } from './engine'
-import { MaterialId, StatusFlag } from './materials'
+import { MATERIAL_PROPERTIES, MaterialId, StatusFlag } from './materials'
 
 function filled(materialId: number) {
   const world = createWorld(0xabc123, false)
@@ -23,14 +23,15 @@ describe('192 × 180 simulation tick', () => {
   bench('Water spread', () => stepWorld(water))
 
   const lava = filled(MaterialId.Lava)
-  lava.heat.fill(255)
+  lava.temperature.fill(MATERIAL_PROPERTIES[MaterialId.Lava].initialTemperature)
   bench('fully occupied Lava heat', () => stepWorld(lava))
 
   const combustion = createWorld(0xabc123, false)
   for (let index = 0; index < combustion.material.length; index += 3) {
     combustion.material[index] = MaterialId.Wood
     combustion.status[index] = StatusFlag.Burning
-    combustion.state[index] = index % 110
+    combustion.temperature[index] = 500
+    combustion.fuel[index] = 200
     if (index + 1 < combustion.material.length) {
       combustion.material[index + 1] = MaterialId.Fire
       combustion.state[index + 1] = 60
