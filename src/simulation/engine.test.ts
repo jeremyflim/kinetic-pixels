@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AMBIENT_TEMPERATURE } from './constants'
-import { clearWorld, createWorld, paintStroke, replaceWorld, snapshotWorld, stepWorld } from './engine'
+import { clearWorld, createWorld, paintCircle, paintStroke, replaceWorld, snapshotWorld, stepWorld } from './engine'
 import {
   FIRE_LIFETIME_MIN,
   MATERIALS,
@@ -8,6 +8,7 @@ import {
   MATERIAL_REACTIONS,
   MaterialId,
   type MaterialIdValue,
+  applyExplosion,
   initializeTransientState,
   reactMaterialPair,
   StatusFlag,
@@ -154,6 +155,25 @@ describe('shared thermal physics', () => {
     expect(world.temperature[index(world, 5, 1)]).toBeGreaterThan(AMBIENT_TEMPERATURE + 30)
   })
 
+  it('diffuses a sustained heat source through arbitrarily long connected air', () => {
+    const world = createWorld(106, false, 15, 3)
+    const source = index(world, 1, 1)
+    const distantAir = index(world, 13, 1)
+    for (let tick = 0; tick < 2_400; tick += 1) {
+      world.temperature[source] = 1_000
+      stepWorld(world)
+    }
+    expect(world.temperature[distantAir]).toBeGreaterThan(AMBIENT_TEMPERATURE + 5)
+  })
+
+  it('returns isolated hot air toward room temperature very slowly', () => {
+    const world = createWorld(107, false, 1, 1)
+    world.temperature[0] = 500
+    step(world, 120)
+    expect(world.temperature[0]).toBeGreaterThan(485)
+    expect(world.temperature[0]).toBeLessThan(500)
+  })
+
   it('boils Water through a Metal pan without a Fire-Water pair rule', () => {
     const world = createWorld(101, false, 7, 7)
     for (let x = 1; x <= 5; x += 1) place(world, x, 4, MaterialId.Stone)
@@ -187,7 +207,7 @@ describe('shared thermal physics', () => {
     const lava = place(world, 3, 1, MaterialId.Lava)
     place(world, 4, 1, MaterialId.Stone)
     step(world, 180)
-    expect(world.temperature[barrier]).toBeGreaterThan(AMBIENT_TEMPERATURE + 100)
+    expect(world.temperature[barrier]).toBeGreaterThan(AMBIENT_TEMPERATURE + 70)
     expect(world.temperature[water]).toBeGreaterThan(AMBIENT_TEMPERATURE)
     expect(world.temperature[lava]).toBeLessThan(1_200)
     expect(reactMaterialPair(world, water, lava)).toBe(false)
@@ -214,7 +234,7 @@ describe('shared thermal physics', () => {
     place(world, 0, 1, MaterialId.Stone, 20)
     place(world, 2, 1, MaterialId.Stone, 20)
     const ice = place(world, 1, 1, MaterialId.Ice, 20)
-    step(world, 3)
+    step(world, 2)
     expect(world.material[ice]).toBe(MaterialId.Ice)
     expect(world.phaseProgress[ice]).toBeGreaterThan(0)
     step(world, 60)
@@ -223,6 +243,17 @@ describe('shared thermal physics', () => {
 })
 
 describe('moisture and combustion', () => {
+  it('refreshes painted Fire as a sustained heat source', () => {
+    const world = createWorld(199, false, 5, 5)
+    paintCircle(world, 2, 2, 1, MaterialId.Fire)
+    const fire = index(world, 2, 2)
+    world.temperature[fire] = 200
+    world.state[fire] = 1
+    paintCircle(world, 2, 2, 1, MaterialId.Fire)
+    expect(world.temperature[fire]).toBe(MATERIAL_PROPERTIES[MaterialId.Fire].initialTemperature)
+    expect(world.state[fire]).toBeGreaterThanOrEqual(FIRE_LIFETIME_MIN)
+  })
+
   it('absorbs Water and diffuses moisture into the interior of a Gunpowder pile', () => {
     const world = createWorld(200, false, 8, 3)
     for (let x = 0; x < world.width; x += 1) {
@@ -250,10 +281,44 @@ describe('moisture and combustion', () => {
     expect(world.status[powder] & StatusFlag.Burning).toBe(0)
     world.moisture[powder] = 0
     world.temperature[powder] = 300
-    step(world, 3)
+    step(world, 2)
     expect(world.status[powder] & StatusFlag.Burning).toBe(StatusFlag.Burning)
     stepWorld(world)
     expect(world.material.includes(MaterialId.Fire)).toBe(true)
+  })
+
+  it('lets warm Oil ignite readily through the shared ignition evaluator', () => {
+    const world = createWorld(204, false, 3, 3)
+    for (let y = 0; y < world.height; y += 1) {
+      for (let x = 0; x < world.width; x += 1) place(world, x, y, MaterialId.Oil, 200)
+    }
+    step(world, 2)
+    expect(world.status.some((status) => Boolean(status & StatusFlag.Burning))).toBe(true)
+  })
+
+  it('applies generalized explosion heat, pressure destruction, resistance, and explosive chaining', () => {
+    const world = createWorld(205, false, 11, 11)
+    const origin = place(world, 5, 5, MaterialId.Gunpowder, 300)
+    const chained = place(world, 5, 4, MaterialId.Gunpowder)
+    const metal = place(world, 4, 5, MaterialId.Metal)
+    let plantCount = 0
+    for (let y = 3; y <= 7; y += 1) {
+      for (let x = 3; x <= 7; x += 1) {
+        const cell = index(world, x, y)
+        if (world.material[cell] !== MaterialId.Empty) continue
+        place(world, x, y, MaterialId.Plant)
+        plantCount += 1
+      }
+    }
+    applyExplosion(world, origin, 5, 5, MATERIAL_PROPERTIES[MaterialId.Gunpowder])
+    expect(world.material[origin]).toBe(MaterialId.Fire)
+    expect(world.material[chained]).toBe(MaterialId.Gunpowder)
+    expect(world.status[chained] & StatusFlag.Burning).toBe(StatusFlag.Burning)
+    expect(world.temperature[chained]).toBeGreaterThan(AMBIENT_TEMPERATURE)
+    expect(world.material[metal]).toBe(MaterialId.Metal)
+    expect(world.temperature[metal]).toBeGreaterThan(AMBIENT_TEMPERATURE)
+    const survivingPlants = world.material.reduce((count, material) => count + Number(material === MaterialId.Plant), 0)
+    expect(survivingPlants).toBeLessThan(plantCount)
   })
 
   it('spreads Wood combustion through heat rather than a Wood-Wood reaction', () => {
@@ -296,6 +361,18 @@ describe('moisture and combustion', () => {
     const burning = cellColor(world, wood)
     expect(wet).not.toEqual(normal)
     expect(burning).not.toEqual(normal)
+  })
+
+  it('renders a translucent hot and cold haze even over air', () => {
+    const world = createWorld(206, false, 1, 1)
+    const ambient = cellColor(world, 0)
+    world.temperature[0] = 1_000
+    const hot = cellColor(world, 0)
+    world.temperature[0] = -100
+    const cold = cellColor(world, 0)
+    expect(hot).not.toEqual(ambient)
+    expect(cold).not.toEqual(ambient)
+    expect(hot).not.toEqual(cold)
   })
 })
 

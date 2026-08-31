@@ -21,22 +21,23 @@ export const STEAM_LIFETIME_MAX = 360
 
 const inertProperties = {
   hardness: 0, conductivity: false, corrosiveness: 0,
-  initialTemperature: AMBIENT_TEMPERATURE, thermalConductivity: 8, heatCapacity: 1, emissivity: 0,
+  initialTemperature: AMBIENT_TEMPERATURE, thermalConductivity: 40, heatCapacity: 1, blastResistance: 0,
   phaseTransitions: [], ignitionTemperature: null, fuel: 0, burnRate: 0,
-  combustionHeat: 0, smokeYield: 0, moistureCapacity: 0, moistureAbsorption: 0, moistureDiffusivity: 0,
+  combustionHeat: 0, smokeYield: 0, explosionRadius: 0, explosionHeat: 0, explosionPressure: 0,
+  moistureCapacity: 0, moistureAbsorption: 0, moistureDiffusivity: 0,
 } as const
 
 export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialProperties>> = {
-  [MaterialId.Empty]: { ...inertProperties, phase: 'vacuum', mobility: 'none', density: 0, friction: 0 },
+  [MaterialId.Empty]: { ...inertProperties, phase: 'gas', mobility: 'none', density: 0, friction: 0 },
   [MaterialId.Sand]: {
     ...inertProperties, phase: 'solid', mobility: 'powder', density: 5, hardness: 0.25, friction: 0.7,
-    thermalConductivity: 24, heatCapacity: 4, emissivity: 40,
+    thermalConductivity: 24, heatCapacity: 4, blastResistance: 0.18,
     phaseTransitions: [{ direction: 'above', temperature: 900, product: MaterialId.Glass, latentHeat: 320 }],
     moistureCapacity: 96, moistureAbsorption: 8, moistureDiffusivity: 18,
   },
   [MaterialId.Water]: {
     ...inertProperties, phase: 'liquid', mobility: 'fluid', density: 2, friction: 0.04, conductivity: true,
-    thermalConductivity: 48, heatCapacity: 4, emissivity: 32,
+    thermalConductivity: 48, heatCapacity: 4, blastResistance: 0.12,
     phaseTransitions: [
       { direction: 'above', temperature: 100, product: MaterialId.Steam, latentHeat: 180 },
       { direction: 'below', temperature: -2, product: MaterialId.Ice, latentHeat: 120 },
@@ -44,69 +45,70 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
   },
   [MaterialId.Stone]: {
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 10, hardness: 1, friction: 0.95,
-    thermalConductivity: 72, heatCapacity: 8, emissivity: 72,
+    thermalConductivity: 96, heatCapacity: 8, blastResistance: 0.95,
     phaseTransitions: [{ direction: 'above', temperature: 1_000, product: MaterialId.Lava, latentHeat: 420 }],
   },
   [MaterialId.Wood]: {
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 8, hardness: 0.45, friction: 0.8,
-    thermalConductivity: 20, heatCapacity: 3, emissivity: 220,
-    ignitionTemperature: 160, fuel: 255, burnRate: 3, combustionHeat: 18, smokeYield: 0.012,
+    thermalConductivity: 20, heatCapacity: 3, blastResistance: 0.48,
+    ignitionTemperature: 160, fuel: 255, burnRate: 3, combustionHeat: 28, smokeYield: 0.012,
     moistureCapacity: 180, moistureAbsorption: 32, moistureDiffusivity: 24,
   },
   [MaterialId.Fire]: {
     ...inertProperties, phase: 'energy', mobility: 'rising', density: 0.02, friction: 0.05,
-    initialTemperature: 850, thermalConductivity: 48, emissivity: 255,
+    initialTemperature: 1_000, thermalConductivity: 48, blastResistance: 0,
   },
   [MaterialId.Smoke]: {
     ...inertProperties, phase: 'gas', mobility: 'rising', density: 0.01, friction: 0.12,
-    initialTemperature: 120, thermalConductivity: 10, emissivity: 24,
+    initialTemperature: 120, thermalConductivity: 10, blastResistance: 0,
   },
   [MaterialId.Oil]: {
     ...inertProperties, phase: 'liquid', mobility: 'fluid', density: 1, friction: 0.025,
-    thermalConductivity: 12, heatCapacity: 3, emissivity: 72,
-    ignitionTemperature: 220, fuel: 255, burnRate: 2, combustionHeat: 14, smokeYield: 0.009,
+    thermalConductivity: 12, heatCapacity: 3, blastResistance: 0.08,
+    ignitionTemperature: 145, fuel: 255, burnRate: 3, combustionHeat: 18, smokeYield: 0.012,
   },
   [MaterialId.Plant]: {
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 4, hardness: 0.1, friction: 0.75,
-    thermalConductivity: 12, heatCapacity: 2, emissivity: 80,
+    thermalConductivity: 12, heatCapacity: 2, blastResistance: 0.16,
     ignitionTemperature: 180, fuel: 180, burnRate: 4, combustionHeat: 10, smokeYield: 0.008,
     moistureCapacity: 220, moistureAbsorption: 30, moistureDiffusivity: 28,
   },
   [MaterialId.Acid]: {
     ...inertProperties, phase: 'liquid', mobility: 'fluid', density: 2.5, friction: 0.055,
-    corrosiveness: 1, thermalConductivity: 40, heatCapacity: 4, emissivity: 32,
+    corrosiveness: 1, thermalConductivity: 40, heatCapacity: 4, blastResistance: 0.08,
   },
   [MaterialId.Metal]: {
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 12, hardness: 0.9, friction: 0.98,
-    conductivity: true, thermalConductivity: 220, heatCapacity: 6, emissivity: 120,
+    conductivity: true, thermalConductivity: 255, heatCapacity: 10, blastResistance: 1.2,
   },
   [MaterialId.Lava]: {
     ...inertProperties, phase: 'liquid', mobility: 'fluid', density: 7, hardness: 0.15, friction: 0.11,
-    initialTemperature: 1_200, thermalConductivity: 68, heatCapacity: 8, emissivity: 230,
+    initialTemperature: 1_200, thermalConductivity: 96, heatCapacity: 8, blastResistance: 0.42,
     phaseTransitions: [{ direction: 'below', temperature: 850, product: MaterialId.Stone, latentHeat: 360 }],
   },
   [MaterialId.Ice]: {
     ...inertProperties, phase: 'solid', mobility: 'powder', density: 1.6, hardness: 0.3, friction: 0.86,
-    initialTemperature: -10, thermalConductivity: 76, heatCapacity: 5, emissivity: 48,
+    initialTemperature: -10, thermalConductivity: 76, heatCapacity: 5, blastResistance: 0.34,
     phaseTransitions: [{ direction: 'above', temperature: 2, product: MaterialId.Water, latentHeat: 120 }],
   },
   [MaterialId.Spark]: {
     ...inertProperties, phase: 'energy', mobility: 'rising', density: 0.005, friction: 0.02,
-    initialTemperature: 1_600, thermalConductivity: 80, emissivity: 255,
+    initialTemperature: 1_600, thermalConductivity: 80, blastResistance: 0,
   },
   [MaterialId.Gunpowder]: {
     ...inertProperties, phase: 'solid', mobility: 'powder', density: 4, hardness: 0.15, friction: 0.62,
-    thermalConductivity: 18, heatCapacity: 2, emissivity: 64,
+    thermalConductivity: 18, heatCapacity: 2, blastResistance: 0.05,
     ignitionTemperature: 160, fuel: 255, burnRate: 255, combustionHeat: 80, smokeYield: 0.02,
+    explosionRadius: 5, explosionHeat: 2_400, explosionPressure: 1.35,
     moistureCapacity: 255, moistureAbsorption: 28, moistureDiffusivity: 72,
   },
   [MaterialId.Glass]: {
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 9, hardness: 0.85, friction: 0.92,
-    thermalConductivity: 34, heatCapacity: 5, emissivity: 36,
+    thermalConductivity: 34, heatCapacity: 5, blastResistance: 0.2,
   },
   [MaterialId.Steam]: {
     ...inertProperties, phase: 'gas', mobility: 'rising', density: 0.015, friction: 0.035,
-    initialTemperature: 110, thermalConductivity: 14, heatCapacity: 2, emissivity: 20,
+    initialTemperature: 110, thermalConductivity: 14, heatCapacity: 2, blastResistance: 0,
     phaseTransitions: [{ direction: 'below', temperature: 90, product: MaterialId.Water, latentHeat: 140 }],
   },
 }
@@ -280,28 +282,38 @@ function emitSmoke(world: World, x: number, y: number): void {
   }
 }
 
-function explodeGunpowder(world: World, index: number, x: number, y: number): void {
-  const originTemperature = Math.max(world.temperature[index], MATERIAL_PROPERTIES[MaterialId.Fire].initialTemperature)
-  setMaterialCell(world, index, MaterialId.Fire, originTemperature)
-  const radius = 4
+export function applyExplosion(world: World, originIndex: number, x: number, y: number, source: MaterialProperties): void {
+  const originTemperature = Math.max(world.temperature[originIndex], source.explosionHeat)
+  setMaterialCell(world, originIndex, MaterialId.Fire, originTemperature)
+  const radius = source.explosionRadius
   for (let targetY = Math.max(0, y - radius); targetY <= Math.min(world.height - 1, y + radius); targetY += 1) {
     for (let targetX = Math.max(0, x - radius); targetX <= Math.min(world.width - 1, x + radius); targetX += 1) {
       const distanceSquared = (targetX - x) ** 2 + (targetY - y) ** 2
       if (distanceSquared > radius * radius || distanceSquared === 0) continue
       const target = at(world, targetX, targetY)
       const distance = Math.sqrt(distanceSquared)
-      addTemperature(world, target, Math.round(1_000 * (1 - distance / (radius + 0.5))))
-      if (world.material[target] === MaterialId.Empty && distance <= 2 && chance(world, 0.025)) {
-        setMaterialCell(world, target, MaterialId.Fire, world.temperature[target])
+      const falloff = Math.max(0, 1 - distance / (radius + 0.5))
+      addTemperature(world, target, Math.round(source.explosionHeat * falloff))
+      const targetProperties = MATERIAL_PROPERTIES[world.material[target] as MaterialIdValue]
+      if (targetProperties.explosionRadius > 0) {
+        world.temperature[target] = Math.max(world.temperature[target], targetProperties.ignitionTemperature ?? AMBIENT_TEMPERATURE)
+        addStatus(world, target, StatusFlag.Burning)
+        continue
       }
+      if (world.material[target] === MaterialId.Empty) {
+        if (falloff > 0.55 && chance(world, 0.06)) setMaterialCell(world, target, MaterialId.Fire, world.temperature[target])
+        continue
+      }
+      const destructionChance = Math.max(0, Math.min(0.85, (source.explosionPressure * falloff - targetProperties.blastResistance) * 0.7))
+      if (chance(world, destructionChance)) emptyCell(world, target)
     }
   }
 }
 
 function updateCombustion(world: World, index: number, x: number, y: number, materialId: MaterialIdValue): boolean {
   if (!hasStatus(world, index, StatusFlag.Burning)) return false
-  if (materialId === MaterialId.Gunpowder) { explodeGunpowder(world, index, x, y); return true }
   const properties = MATERIAL_PROPERTIES[materialId]
+  if (properties.explosionRadius > 0) { applyExplosion(world, index, x, y, properties); return true }
   const saturation = properties.moistureCapacity > 0 ? world.moisture[index] / properties.moistureCapacity : 0
   if (saturation >= 0.35 || world.temperature[index] < (properties.ignitionTemperature ?? 0) * 0.55) {
     clearStatus(world, index, StatusFlag.Burning)

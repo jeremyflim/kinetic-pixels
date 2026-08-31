@@ -86,6 +86,28 @@ test('clearly separates the playable canvas from its dark bezel', async ({ page 
   await expect(page.locator('canvas')).toHaveCSS('background-color', 'rgb(251, 248, 255)')
 })
 
+test('inspection mode reads live stats without painting or starting the field', async ({ page }) => {
+  const inspect = page.getByRole('button', { name: /See stats/ })
+  await inspect.click()
+  await expect(inspect).toHaveAttribute('aria-pressed', 'true')
+  const canvas = page.locator('canvas')
+  await canvas.hover({ position: { x: 10, y: 10 } })
+  const panel = page.getByLabel('Pixel inspection')
+  await expect(panel).toBeVisible()
+  await expect(panel).toContainText('Air')
+  await expect(panel).toContainText('Temperature')
+  await canvas.click({ position: { x: 10, y: 10 } })
+  await expect(page.getByText('Click to play')).toBeVisible()
+  expect(await materialCount(page, 1)).toBe(0)
+})
+
+test('pause control and side indicators use the console signal animations', async ({ page }) => {
+  await page.keyboard.press('Space')
+  await expect(page.getByRole('button', { name: /Pause/ })).toHaveCSS('animation-name', 'pause-button-blink')
+  await expect(page.locator('.screw-one')).toHaveCSS('animation-name', 'side-light-left')
+  await expect(page.locator('.screw-two')).toHaveCSS('animation-name', 'side-light-right')
+})
+
 test('momentary action buttons visibly press into the console', async ({ page }) => {
   const clear = await pressStyles(page, '.console-button.destructive')
   expect(clear.pressed.translate).not.toBe(clear.before.translate)

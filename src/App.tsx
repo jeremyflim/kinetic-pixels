@@ -1,8 +1,8 @@
-import { Bomb, Brush, CirclePlay, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, Snowflake, Sparkles, Trash2, Trees, Zap } from 'lucide-react'
+import { Bomb, CirclePlay, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, ScanSearch, Snowflake, Sparkles, Trash2, Trees, Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MemoryCardDialog } from './MemoryCardDialog'
-import { MaterialId, PAINTABLE_MATERIALS } from './simulation/materials'
-import { GRID_HEIGHT, GRID_WIDTH, type Snapshot } from './simulation/types'
+import { MATERIAL_BY_ID, MaterialId, PAINTABLE_MATERIALS, StatusFlag } from './simulation/materials'
+import { GRID_HEIGHT, GRID_WIDTH, type CellInspection, type Snapshot } from './simulation/types'
 
 const ICONS: Record<string, typeof Sparkles> = {
   sand: Sparkles,
@@ -61,6 +61,9 @@ export function App() {
   const pendingStroke = useRef<PendingStroke | null>(null)
   const strokeFrame = useRef<number | null>(null)
   const continuousStrokeFrame = useRef<number | null>(null)
+  const inspectionFrame = useRef<number | null>(null)
+  const pendingInspection = useRef<Point | null>(null)
+  const latestInspectionRequest = useRef(0)
 
   const [ready, setReady] = useState(false)
   const [running, setRunningState] = useState(false)
@@ -70,6 +73,8 @@ export function App() {
   const [startup, setStartup] = useState(true)
   const [memoryOpen, setMemoryOpen] = useState(false)
   const [preview, setPreview] = useState<Point | null>(null)
+  const [inspectMode, setInspectMode] = useState(false)
+  const [inspection, setInspection] = useState<CellInspection | null>(null)
 
   const setRunning = useCallback((next: boolean) => {
     runningRef.current = next
@@ -84,11 +89,14 @@ export function App() {
     workerRef.current = worker
     const offscreen = canvas.transferControlToOffscreen()
     worker.postMessage({ type: 'init', canvas: offscreen, seed: 0x4b504958 }, [offscreen])
-    worker.onmessage = (event: MessageEvent<{ type: string; requestId?: number; snapshot?: Snapshot }>) => {
+    worker.onmessage = (event: MessageEvent<{ type: string; requestId?: number; snapshot?: Snapshot; inspection?: CellInspection }>) => {
       if (event.data.type === 'ready') setReady(true)
       if (event.data.type === 'snapshot' && event.data.requestId !== undefined && event.data.snapshot) {
         pendingSnapshots.current.get(event.data.requestId)?.(event.data.snapshot)
         pendingSnapshots.current.delete(event.data.requestId)
+      }
+      if (event.data.type === 'inspection' && event.data.requestId === latestInspectionRequest.current && event.data.inspection) {
+        setInspection(event.data.inspection)
       }
     }
     return () => worker.terminate()
@@ -97,6 +105,7 @@ export function App() {
   useEffect(() => () => {
     if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current)
     if (continuousStrokeFrame.current !== null) cancelAnimationFrame(continuousStrokeFrame.current)
+    if (inspectionFrame.current !== null) cancelAnimationFrame(inspectionFrame.current)
   }, [])
 
   const requestSnapshot = useCallback(() => new Promise<Snapshot>((resolve) => {
@@ -131,6 +140,13 @@ export function App() {
     })
   }, [selectedMaterial])
 
+  const toggleInspect = useCallback(() => {
+    setInspectMode((active) => {
+      if (active) setInspection(null)
+      return !active
+    })
+  }, [])
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.ctrlKey || event.altKey || event.metaKey) return
@@ -142,6 +158,8 @@ export function App() {
         toggleRunning()
       } else if (event.key.toLowerCase() === 'e') {
         toggleEraser()
+      } else if (event.key.toLowerCase() === 'i') {
+        toggleInspect()
       } else if (event.key === '-') {
         setRadius((value) => Math.max(1, value - 1))
       } else if (event.key === '=' || event.key === '+') {
@@ -150,7 +168,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [memoryOpen, toggleEraser, toggleRunning])
+  }, [memoryOpen, toggleEraser, toggleInspect, toggleRunning])
 
   function pointFromClient(clientX: number, clientY: number, canvas: HTMLCanvasElement): Point {
     const bounds = canvas.getBoundingClientRect()
@@ -213,10 +231,29 @@ export function App() {
     continuousStrokeFrame.current = requestAnimationFrame(repeat)
   }
 
+  function queueInspection(point: Point) {
+    pendingInspection.current = point
+    if (inspectionFrame.current !== null) return
+    inspectionFrame.current = requestAnimationFrame(() => {
+      inspectionFrame.current = null
+      const next = pendingInspection.current
+      pendingInspection.current = null
+      if (!next) return
+      const requestId = ++requestCounter.current
+      latestInspectionRequest.current = requestId
+      workerRef.current?.postMessage({ type: 'inspect', requestId, x: next.x, y: next.y })
+    })
+  }
+
   function onPointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     if (event.button !== 0 || !ready) return
-    event.currentTarget.setPointerCapture(event.pointerId)
     const point = pointFromClient(event.clientX, event.clientY, event.currentTarget)
+    if (inspectMode) {
+      setPreview(point)
+      queueInspection(point)
+      return
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
     pointerDown.current = true
     previousPoint.current = point
     setPreview(point)
@@ -231,6 +268,7 @@ export function App() {
   function onPointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
     const point = pointFromClient(event.clientX, event.clientY, event.currentTarget)
     setPreview(point)
+    if (inspectMode) queueInspection(point)
     if (pointerDown.current && previousPoint.current) {
       queueStroke(previousPoint.current, point)
       previousPoint.current = point
@@ -274,6 +312,15 @@ export function App() {
 
   const currentMaterial = PAINTABLE_MATERIALS.find((material) => material.id === selectedMaterial)
   const toolLabel = eraser ? 'Eraser' : currentMaterial?.label ?? 'Sand'
+  const inspectedMaterial = inspection ? MATERIAL_BY_ID.get(inspection.materialId) : undefined
+  const inspectedProperties = inspectedMaterial?.properties
+  const inspectedConditions = inspection
+    ? [
+        inspection.status & StatusFlag.Burning ? 'Burning' : '',
+        inspection.moisture > 0 ? 'Wet' : '',
+        inspection.status & StatusFlag.Charged ? 'Charged' : '',
+      ].filter(Boolean).join(', ') || 'Stable'
+    : ''
 
   return (
     <main className="page-shell">
@@ -313,6 +360,7 @@ export function App() {
             <div className="canvas-stage">
               <canvas
                 ref={canvasRef}
+                className={inspectMode ? 'inspecting' : ''}
                 width={GRID_WIDTH}
                 height={GRID_HEIGHT}
                 aria-label={`Interactive ${GRID_WIDTH} by ${GRID_HEIGHT} cell pixel physics field. Click, hold, or drag to paint the selected material.`}
@@ -321,10 +369,10 @@ export function App() {
                 onPointerMove={onPointerMove}
                 onPointerUp={endPointer}
                 onPointerCancel={endPointer}
-                onPointerLeave={() => { setPreview(null); if (!pointerDown.current) endPointer() }}
+                onPointerLeave={() => { setPreview(null); setInspection(null); if (!pointerDown.current) endPointer() }}
               />
               {startup && <div className="startup-hint"><CirclePlay aria-hidden="true" /><span>Click to play</span></div>}
-              {preview && (
+              {preview && !inspectMode && (
                 <div
                   className="brush-preview"
                   aria-hidden="true"
@@ -334,6 +382,46 @@ export function App() {
                     width: `${((radius * 2) / GRID_WIDTH) * 100}%`,
                   }}
                 />
+              )}
+              {preview && inspectMode && (
+                <div
+                  className="inspect-reticle"
+                  aria-hidden="true"
+                  style={{
+                    left: `${((Math.floor(preview.x) + 0.5) / GRID_WIDTH) * 100}%`,
+                    top: `${((Math.floor(preview.y) + 0.5) / GRID_HEIGHT) * 100}%`,
+                    width: `${100 / GRID_WIDTH}%`,
+                    height: `${100 / GRID_HEIGHT}%`,
+                  }}
+                />
+              )}
+              {inspectMode && (
+                <aside className="inspection-panel" aria-live="polite" aria-label="Pixel inspection">
+                  <header><span>Pixel probe</span><b>{inspection ? `${inspection.x}, ${inspection.y}` : 'Hover field'}</b></header>
+                  {inspection && inspectedProperties ? (
+                    <dl>
+                      <dt>Material</dt><dd>{inspection.materialId === MaterialId.Empty ? 'Air' : inspectedMaterial?.label}</dd>
+                      <dt>Temperature</dt><dd>{inspection.temperature} °C</dd>
+                      <dt>Condition</dt><dd>{inspectedConditions}</dd>
+                      <dt>State channel</dt><dd>{inspection.state}</dd>
+                      <dt>Type</dt><dd>{inspectedProperties.phase} / {inspectedProperties.mobility}</dd>
+                      <dt>Density</dt><dd>{inspectedProperties.density}</dd>
+                      <dt>Hardness</dt><dd>{inspectedProperties.hardness}</dd>
+                      <dt>Friction</dt><dd>{inspectedProperties.friction}</dd>
+                      <dt>Heat flow</dt><dd>{inspectedProperties.thermalConductivity}</dd>
+                      <dt>Heat capacity</dt><dd>{inspectedProperties.heatCapacity}</dd>
+                      <dt>Moisture</dt><dd>{inspection.moisture} / {inspectedProperties.moistureCapacity}</dd>
+                      <dt>Fuel</dt><dd>{inspection.fuel} / {inspectedProperties.fuel}</dd>
+                      <dt>Liquid mass</dt><dd>{inspection.liquidMass}</dd>
+                      <dt>Phase progress</dt><dd>{inspection.phaseProgress}</dd>
+                      <dt>Ignition</dt><dd>{inspectedProperties.ignitionTemperature === null ? '—' : `${inspectedProperties.ignitionTemperature} °C`}</dd>
+                      <dt>Explosion</dt><dd>{inspectedProperties.explosionRadius > 0 ? `${inspectedProperties.explosionRadius} cells / ${inspectedProperties.explosionPressure}` : '—'}</dd>
+                      <dt>Blast resistance</dt><dd>{inspectedProperties.blastResistance}</dd>
+                      <dt>Conductive</dt><dd>{inspectedProperties.conductivity ? 'Yes' : 'No'}</dd>
+                      <dt>Corrosiveness</dt><dd>{inspectedProperties.corrosiveness}</dd>
+                    </dl>
+                  ) : <p>Move across the field to read a cell.</p>}
+                </aside>
               )}
             </div>
           </div>
@@ -348,6 +436,7 @@ export function App() {
             <div className="utility-grid">
               <button className={`console-button ${eraser ? 'active' : ''}`} aria-pressed={eraser} onClick={toggleEraser}><Eraser aria-hidden="true" /><span>Eraser</span><kbd>E</kbd></button>
               <button className="console-button destructive" onClick={clear}><Trash2 aria-hidden="true" /><span>Clear</span></button>
+              <button className={`console-button inspect-button ${inspectMode ? 'active' : ''}`} aria-pressed={inspectMode} onClick={toggleInspect}><ScanSearch aria-hidden="true" /><span>See stats</span><kbd>I</kbd></button>
             </div>
           </div>
           <div className="control-bottom halftone">

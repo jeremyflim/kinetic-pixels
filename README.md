@@ -32,6 +32,8 @@ same way.
   The first field click starts the simulation and paints.
 - `Space` toggles Play/Pause.
 - `E` toggles Eraser and restores the previously selected material when toggled off.
+- `I` toggles See Stats. While active, hovering a cell—including air—shows its live state and
+  material properties without painting or starting the simulation.
 - `-`, `=`, and `+` change the circular brush radius from 1–20 cells.
 - Clear empties the world without restoring the title or changing the current tool, radius,
   or play state.
@@ -50,12 +52,13 @@ while paused.
 
 The simulation core under `src/simulation/` is independent of React, workers, and rendering.
 Material definitions use stable numeric IDs backed by one exported physical-properties table.
-Each entry declares movement, density, thermal conductivity and capacity, emissivity, phase
-transitions, combustion, moisture, conductivity, and corrosion properties.
+Each entry declares movement, density, thermal conductivity and capacity, phase transitions,
+combustion, moisture, blast resistance, conductivity, and corrosion properties.
 
-Temperature persists in every cell, including empty air. A shared solver conducts it across
-material boundaries, radiates it from exposed hot surfaces, and drives latent phase transitions
-and ignition. A second shared solver absorbs and diffuses moisture through porous materials,
+Temperature persists in every cell, including empty air. A shared, unbounded local diffusion
+solver conducts it across every connected chain of cells and drives latent phase transitions
+and ignition. Air relaxes toward room temperature slowly instead of imposing a range cutoff.
+A second shared solver absorbs and diffuses moisture through porous materials,
 spends finite Water mass, and consumes heat while drying. Combustion consumes fuel and feeds
 heat back into the same thermal field, so fire spread emerges from temperature rather than
 Wood-to-Wood or Fire-to-Wood pair rules.
@@ -119,11 +122,11 @@ Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1
 
 | 192 × 180 scenario | Mean tick | Throughput |
 | --- | ---: | ---: |
-| Fully occupied stationary grid | 2.81 ms | 355.59 ticks/s |
-| Falling Sand | 6.59 ms | 151.68 ticks/s |
-| Water spread | 5.12 ms | 195.48 ticks/s |
-| Fully occupied Lava / thermal field | 8.98 ms | 111.39 ticks/s |
-| Burning Wood / Fire / Smoke | 11.74 ms | 85.15 ticks/s |
+| Fully occupied stationary grid | 3.21 ms | 311.31 ticks/s |
+| Falling Sand | 7.27 ms | 137.58 ticks/s |
+| Water spread | 5.27 ms | 189.87 ticks/s |
+| Fully occupied Lava / thermal field | 8.68 ms | 115.21 ticks/s |
+| Burning Wood / Fire / Smoke | 14.00 ms | 71.40 ticks/s |
 
 These figures are descriptive rather than CI thresholds because shared runners have noisy timing.
 

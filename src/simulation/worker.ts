@@ -2,7 +2,7 @@
 
 import { clearWorld, createWorld, paintStroke, replaceWorld, snapshotWorld, stepWorld } from './engine'
 import { renderWorld } from './render'
-import type { Snapshot, World } from './types'
+import type { CellInspection, Snapshot, World } from './types'
 
 type WorkerCommand =
   | { type: 'init'; canvas: OffscreenCanvas; seed: number }
@@ -10,6 +10,7 @@ type WorkerCommand =
   | { type: 'stroke'; fromX: number; fromY: number; toX: number; toY: number; radius: number; materialId: number; erase: boolean }
   | { type: 'clear' }
   | { type: 'snapshot'; requestId: number }
+  | { type: 'inspect'; requestId: number; x: number; y: number }
   | { type: 'replace'; snapshot: Snapshot }
 
 let world: World | undefined
@@ -83,6 +84,24 @@ self.onmessage = (event: MessageEvent<WorkerCommand>) => {
     draw()
   }
   if (command.type === 'snapshot') self.postMessage({ type: 'snapshot', requestId: command.requestId, snapshot: snapshotWorld(world) })
+  if (command.type === 'inspect') {
+    const x = Math.max(0, Math.min(world.width - 1, Math.floor(command.x)))
+    const y = Math.max(0, Math.min(world.height - 1, Math.floor(command.y)))
+    const index = y * world.width + x
+    const inspection: CellInspection = {
+      x,
+      y,
+      materialId: world.material[index],
+      state: world.state[index],
+      status: world.status[index],
+      temperature: world.temperature[index],
+      moisture: world.moisture[index],
+      fuel: world.fuel[index],
+      liquidMass: world.liquidMass[index],
+      phaseProgress: world.phaseProgress[index],
+    }
+    self.postMessage({ type: 'inspection', requestId: command.requestId, inspection })
+  }
 }
 
 export {}

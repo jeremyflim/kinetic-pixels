@@ -1,5 +1,6 @@
 import {
   AMBIENT_TEMPERATURE,
+  AIR_COOLING_INTERVAL,
   MAXIMUM_TEMPERATURE,
   MINIMUM_TEMPERATURE,
   MOISTURE_INTERVAL,
@@ -14,10 +15,6 @@ import {
   setMaterialCell,
 } from './materials'
 import type { MaterialProperties, World } from './types'
-
-const RADIATION_DIRECTIONS = [
-  [0, -1], [-1, 0], [1, 0], [0, 1],
-] as const
 
 function properties(world: World, index: number): MaterialProperties {
   return MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
@@ -40,65 +37,27 @@ function exchangeTemperature(world: World, first: number, second: number): void 
   const secondProperties = properties(world, second)
   const conductivity = Math.min(firstProperties.thermalConductivity, secondProperties.thermalConductivity)
   if (conductivity <= 0) return
-  let energy = Math.trunc(difference * conductivity / 256)
+  let energy = Math.trunc(difference * conductivity / 128)
   if (energy === 0) energy = Math.sign(difference)
-  const maximum = Math.max(1, Math.trunc(Math.abs(difference) * Math.min(firstProperties.heatCapacity, secondProperties.heatCapacity) / 3))
+  const maximum = Math.max(1, Math.trunc(Math.abs(difference) * Math.min(firstProperties.heatCapacity, secondProperties.heatCapacity) / 4))
   energy = Math.sign(energy) * Math.min(Math.abs(energy), maximum)
   world.temperatureDelta[first] -= temperatureChange(energy, firstProperties.heatCapacity)
   world.temperatureDelta[second] += temperatureChange(energy, secondProperties.heatCapacity)
 }
 
-function isRadiativelyExposed(world: World, x: number, y: number): boolean {
-  for (const [offsetX, offsetY] of [[0, -1], [-1, 0], [1, 0], [0, 1]] as const) {
-    const targetX = x + offsetX
-    const targetY = y + offsetY
-    if (targetX < 0 || targetX >= world.width || targetY < 0 || targetY >= world.height) return true
-    if (world.material[targetY * world.width + targetX] === MaterialId.Empty) return true
-  }
-  return false
-}
-
-function radiateTemperature(world: World): void {
-  const radiationFrame = Math.floor(world.tick / THERMAL_INTERVAL) % 3
-  for (let y = 0; y < world.height; y += 1) {
-    for (let x = 0; x < world.width; x += 1) {
-      const source = y * world.width + x
-      if (source % 3 !== radiationFrame) continue
-      const sourceProperties = properties(world, source)
-      const excess = world.temperature[source] - AMBIENT_TEMPERATURE
-      if (excess < 80 || sourceProperties.emissivity <= 0 || !isRadiativelyExposed(world, x, y)) continue
-      const rayEnergy = Math.max(1, Math.trunc(excess * sourceProperties.emissivity * 3 / 16_384))
-      let emittedEnergy = 0
-      for (const [directionX, directionY] of RADIATION_DIRECTIONS) {
-        for (let distance = 1; distance <= 2; distance += 1) {
-          const targetX = x + directionX * distance
-          const targetY = y + directionY * distance
-          if (targetX < 0 || targetX >= world.width || targetY < 0 || targetY >= world.height) break
-          const target = targetY * world.width + targetX
-          const energy = Math.max(1, Math.trunc(rayEnergy / (distance * distance)))
-          world.temperatureDelta[target] += temperatureChange(energy, properties(world, target).heatCapacity)
-          emittedEnergy += energy
-          if (world.material[target] !== MaterialId.Empty) break
-        }
-      }
-      world.temperatureDelta[source] -= temperatureChange(emittedEnergy, sourceProperties.heatCapacity)
-    }
-  }
-}
-
 function conductTemperature(world: World): void {
   world.temperatureDelta.fill(0)
+  const coolingFrame = Math.floor(world.tick / THERMAL_INTERVAL) % AIR_COOLING_INTERVAL
   for (let y = 0; y < world.height; y += 1) {
     for (let x = 0; x < world.width; x += 1) {
       const index = y * world.width + x
       if (x + 1 < world.width) exchangeTemperature(world, index, index + 1)
       if (y + 1 < world.height) exchangeTemperature(world, index, index + world.width)
-      if (world.material[index] === MaterialId.Empty) {
-        world.temperatureDelta[index] += Math.trunc((AMBIENT_TEMPERATURE - world.temperature[index]) / 32)
+      if (world.material[index] === MaterialId.Empty && index % AIR_COOLING_INTERVAL === coolingFrame) {
+        world.temperatureDelta[index] += Math.sign(AMBIENT_TEMPERATURE - world.temperature[index])
       }
     }
   }
-  radiateTemperature(world)
   for (let index = 0; index < world.temperature.length; index += 1) {
     world.temperature[index] = clampTemperature(world.temperature[index] + world.temperatureDelta[index])
   }

@@ -8,15 +8,14 @@ possible pair.
 
 Every one of the 120 distinct non-empty material pairs exchanges temperature when adjacent.
 Heat can continue through chains of cells, including empty air, so the effect is not limited to
-the first touching pair. Exposed hot surfaces also radiate along four directions through up to
-two air cells, stopping at the first occupied cell.
+the first touching pair and has no maximum range. Empty air cools toward room temperature very
+slowly while the same local solver continues spreading the field.
 
 Additional interactions are selected by properties rather than material names:
 
 | Property combination | Shared result |
 | --- | --- |
 | Any two cells with different temperatures | Capacity-weighted heat conduction |
-| Exposed hot material + air or another material within the radiation path | Short-range radiant heating |
 | Denser moving material + lighter liquid/gas | The denser material can displace and settle through it |
 | Water + a porous material | Water mass becomes absorbed moisture |
 | Any two porous materials | Moisture diffuses from higher to lower saturation, even when their identities differ |
@@ -38,15 +37,15 @@ intentional; this is not an SI-unit thermodynamics solver.
 | --- | --- | ---: | ---: | ---: | --- | ---: | ---: |
 | Sand | Movable solid / powder | 5 | 24 / 4 | 20 | Above 900 → Glass | — | 96 |
 | Water | Liquid / fluid | 2 | 48 / 4 | 20 | Above 100 → Steam; below −2 → Ice | — | — |
-| Stone | Solid / immovable | 10 | 72 / 8 | 20 | Above 1,000 → Lava | — | — |
+| Stone | Solid / immovable | 10 | 96 / 8 | 20 | Above 1,000 → Lava | — | — |
 | Wood | Solid / immovable | 8 | 20 / 3 | 20 | — | 160 | 180 |
-| Fire | Energy / rising | 0.02 | 48 / 1 | 850 | — | — | — |
+| Fire | Energy / rising | 0.02 | 48 / 1 | 1,000 | — | — | — |
 | Smoke | Gas / rising | 0.01 | 10 / 1 | 120 | — | — | — |
-| Oil | Liquid / fluid | 1 | 12 / 3 | 20 | — | 220 | — |
+| Oil | Liquid / fluid | 1 | 12 / 3 | 20 | — | 145 | — |
 | Plant | Solid / immovable | 4 | 12 / 2 | 20 | — | 180 | 220 |
 | Acid | Liquid / fluid | 2.5 | 40 / 4 | 20 | — | — | — |
-| Metal | Solid / immovable | 12 | 220 / 6 | 20 | — | — | — |
-| Lava | Liquid / fluid | 7 | 68 / 8 | 1,200 | Below 850 → Stone | — | — |
+| Metal | Solid / immovable | 12 | 255 / 10 | 20 | — | — | — |
+| Lava | Liquid / fluid | 7 | 96 / 8 | 1,200 | Below 850 → Stone | — | — |
 | Ice | Movable solid / powder | 1.6 | 76 / 5 | −10 | Above 2 → Water | — | — |
 | Spark | Energy / rising | 0.005 | 80 / 1 | 1,600 | — | — | — |
 | Gunpowder | Movable solid / powder | 4 | 18 / 2 | 20 | — | 160 | 255 |
@@ -56,6 +55,10 @@ intentional; this is not an SI-unit thermodynamics solver.
 Each transition has a latent-energy requirement. Crossing a threshold starts progress; it does
 not replace the material immediately. Stone melts at a higher threshold than Lava freezes, which
 also prevents rapid Stone/Lava oscillation.
+
+Blast resistance is separate from hardness so brittle Glass can resist corrosion yet shatter.
+Metal is highest at 1.2, followed by Stone at 0.95; Wood is 0.48, most liquids and powders are
+0.05–0.18, and energy/gas cells are zero.
 
 ## Moisture network
 
@@ -80,15 +83,16 @@ decides whether surrounding cells become hot enough to ignite.
 
 | Material | Fuel | Burn rate per 60 Hz update | Heat per consumed fuel | Smoke chance per update | Special outcome |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Wood | 255 | 3 | 18 | 1.2% | Burns away after about 85 updates if uninterrupted |
-| Oil | 255 | 2 | 14 | 0.9% | Continues flowing while burning |
+| Wood | 255 | 3 | 28 | 1.2% | Burns away after about 85 updates if uninterrupted |
+| Oil | 255 | 3 | 18 | 1.2% | Ignites readily and continues flowing while burning |
 | Plant | 180 | 4 | 10 | 0.8% | Stops growth while burning |
-| Gunpowder | 255 | 255 | 80 | 2% | Converts to Fire and emits a radius-4 thermal impulse |
+| Gunpowder | 255 | 255 | 80 | 2% | Converts to Fire and emits a radius-5 heat/pressure explosion |
 
 There is no Fire + Wood ignition rule and no Wood + Wood spread rule. Fire is a hot rising cell;
-Wood ignites only if conduction or radiation raises its temperature enough while it is dry.
-Gunpowder's impulse heats every material according to heat capacity rather than selecting only
-flammable identities. Nearby dry Gunpowder therefore chains through the normal ignition system.
+Wood ignites only if conduction raises its temperature enough while it is dry. Gunpowder uses
+the generic explosion profile: heat is deposited by distance, pressure may destroy targets whose
+blast resistance is low enough, and destroyed cells retain hot air. Explosive targets are heated
+and marked to detonate instead of being deleted.
 
 ## Identity-specific chemistry
 
@@ -110,9 +114,9 @@ cell.
 | System | Rate |
 | --- | ---: |
 | Movement, combustion, lifetimes, and charge | 60 Hz |
-| Temperature conduction, phase evaluation, and ignition | 20 Hz |
+| Temperature conduction, phase evaluation, and ignition | 30 Hz |
 | Moisture absorption, diffusion, and evaporation | 10 Hz |
-| Surface radiation | Sources are deterministically staggered across thermal updates |
+| Ambient air cooling | One staggered cell group relaxes one degree per thermal update |
 
 Temperature uses a reusable integer delta buffer so a conduction pass does not depend on scan
 direction. Material, lifetime/growth/charge, status, temperature, moisture, fuel, liquid mass,

@@ -98,9 +98,16 @@ export function paintCircle(world: World, centerX: number, centerY: number, radi
         world.fuel[index] = 0
         world.liquidMass[index] = 0
         world.phaseProgress[index] = 0
-      } else if (world.material[index] === MaterialId.Empty && MATERIAL_BY_ID.get(materialId)?.paintable) {
-        world.material[index] = materialId
-        initializeTransientState(world, index, materialId)
+      } else {
+        const definition = MATERIAL_BY_ID.get(materialId)
+        const canPaint = definition?.paintable && (
+          world.material[index] === MaterialId.Empty
+          || (world.material[index] === materialId && definition.properties.phase === 'energy')
+        )
+        if (canPaint) {
+          world.material[index] = materialId
+          initializeTransientState(world, index, materialId)
+        }
       }
     }
   }

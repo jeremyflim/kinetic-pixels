@@ -51,13 +51,16 @@ export interface MaterialProperties {
   initialTemperature: number
   thermalConductivity: number
   heatCapacity: number
-  emissivity: number
+  blastResistance: number
   phaseTransitions: readonly PhaseTransition[]
   ignitionTemperature: number | null
   fuel: number
   burnRate: number
   combustionHeat: number
   smokeYield: number
+  explosionRadius: number
+  explosionHeat: number
+  explosionPressure: number
   moistureCapacity: number
   moistureAbsorption: number
   moistureDiffusivity: number
@@ -87,4 +90,17 @@ export interface Snapshot {
   fuel: Uint8Array
   liquidMass: Uint8Array
   phaseProgress: Uint16Array
+}
+
+export interface CellInspection {
+  x: number
+  y: number
+  materialId: number
+  state: number
+  status: number
+  temperature: number
+  moisture: number
+  fuel: number
+  liquidMass: number
+  phaseProgress: number
 }

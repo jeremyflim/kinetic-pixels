@@ -1,4 +1,5 @@
 import { MATERIALS, MATERIAL_PROPERTIES, MaterialId, type MaterialIdValue, StatusFlag } from './materials'
+import { AMBIENT_TEMPERATURE, MAXIMUM_TEMPERATURE, MINIMUM_TEMPERATURE } from './constants'
 import type { World } from './types'
 
 const RGB = MATERIALS.map((material) => material.colors.map((color) => {
@@ -73,6 +74,14 @@ export function cellColor(world: World, index: number): readonly [number, number
   if (!isBurning && VISIBLY_HEATED.has(materialId) && world.temperature[index] > 100) {
     const blend = Math.min(0.46, ((world.temperature[index] - 100) / 900) * 0.46)
     color = blendColor(color, [255, 109, 74], blend)
+  }
+  const temperatureOffset = world.temperature[index] - AMBIENT_TEMPERATURE
+  if (temperatureOffset > 4) {
+    const haze = Math.min(0.15, temperatureOffset / (MAXIMUM_TEMPERATURE - AMBIENT_TEMPERATURE) * 0.3)
+    color = blendColor(color, [255, 132, 147], haze)
+  } else if (temperatureOffset < -4) {
+    const haze = Math.min(0.17, -temperatureOffset / (AMBIENT_TEMPERATURE - MINIMUM_TEMPERATURE) * 0.17)
+    color = blendColor(color, [116, 190, 255], haze)
   }
   return color
 }
