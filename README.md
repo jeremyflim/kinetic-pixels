@@ -63,7 +63,7 @@ the same way.
   the first ordinary field click starts the simulation.
 - Use `Space` to Play/Pause and `E` to toggle the Eraser.
 - Use `-`, `=`, or `+` to adjust the circular brush radius from 1–20 cells.
-- Set Room temperature from −50–150°C to change the environmental baseline. Empty air moves
+- Set Room temperature from −100–500°C to change the environmental baseline. Empty air moves
   toward that target, and ordinary newly painted materials begin at it; authored sources such as
   Fire, Lava, Ice, Steam, and Spark keep their characteristic starting temperatures.
 - Use `I` or See Stats to inspect live physical properties while preserving normal painting.

@@ -48,7 +48,7 @@ test('starts with the wooden title, Sand, paused state, and instruction', async 
   await expect(page.getByText('Paused')).toBeVisible()
   const startupHint = page.locator('.startup-hint')
   await expect(startupHint).toBeVisible()
-  await expect(startupHint).toHaveCSS('animation-name', 'startup-signal-blink')
+  await expect(page.locator('.device')).toHaveCSS('animation-name', 'console-signal-cycle')
   expect(await materialCount(page, 4)).toBe(TITLE_WOOD_CELLS)
 })
 
@@ -165,12 +165,31 @@ test('time rate keys change worker tick throughput without changing the fixed si
   expect(fastEnd - fastStart).toBeGreaterThan((slowEnd - slowStart) * 2.5)
 })
 
-test('pause control and side indicators use the console signal animations', async ({ page }) => {
-  await expect(page.locator('.status-space b')).toHaveCSS('animation-name', 'paused-indicator-blink')
+test('all blinking indicators share one console signal timeline', async ({ page }) => {
+  await expect(page.locator('.device')).toHaveCSS('animation-name', 'console-signal-cycle')
+  await expect(page.locator('.device')).toHaveCSS('animation-duration', '1.35s')
+  await expect(page.locator('.status-space b')).toHaveCSS('animation-name', 'none')
+  await expect(page.locator('.startup-hint')).toHaveCSS('animation-name', 'none')
+  await expect(page.locator('.screw-one')).toHaveCSS('animation-name', 'none')
+  await expect(page.locator('.screw-two')).toHaveCSS('animation-name', 'none')
+  await expect.poll(() => page.locator('.device').evaluate((device) => {
+    const style = (selector: string) => getComputedStyle(device.querySelector(selector)!)
+    return {
+      status: style('.status-space b').color,
+      statusOpacity: style('.status-space b').opacity,
+      left: style('.screw-one').backgroundColor,
+      right: style('.screw-two').backgroundColor,
+      prompt: style('.startup-hint').backgroundColor,
+    }
+  }), { timeout: 2_500, intervals: [20] }).toEqual({
+    status: 'rgb(255, 71, 132)',
+    statusOpacity: '0.28',
+    left: 'rgb(255, 190, 79)',
+    right: 'rgb(146, 167, 255)',
+    prompt: 'rgb(69, 230, 189)',
+  })
   await page.keyboard.press('Space')
   await expect(page.getByRole('button', { name: /Pause/ })).toHaveCSS('animation-name', 'none')
-  await expect(page.locator('.screw-one')).toHaveCSS('animation-name', 'side-light-left')
-  await expect(page.locator('.screw-two')).toHaveCSS('animation-name', 'side-light-right')
 })
 
 test('wheel zoom keeps the pointed cell anchored and the gauge can reset it', async ({ page }) => {
@@ -315,15 +334,19 @@ test('radius shortcuts clamp and adjust the control', async ({ page }) => {
 test('room temperature control sets the environmental baseline', async ({ page }) => {
   const slider = page.getByLabel('Room temperature')
   await expect(slider).toHaveValue('20')
-  await slider.fill('80')
-  await expect(slider).toHaveValue('80')
-  await expect(page.locator('.temperature-label output')).toHaveText('80 °C')
+  await expect(slider).toHaveAttribute('min', '-100')
+  await expect(slider).toHaveAttribute('max', '500')
+  await slider.fill('-100')
+  await expect(page.locator('.temperature-label output')).toHaveText('-100 °C')
+  await slider.fill('500')
+  await expect(slider).toHaveValue('500')
+  await expect(page.locator('.temperature-label output')).toHaveText('500 °C')
 
   await page.getByRole('button', { name: /Clear/ }).click()
   await page.getByRole('button', { name: /See stats/ }).click()
   await page.locator('canvas').hover({ position: { x: 20, y: 20 } })
   const temperature = page.getByLabel('Pixel inspection').locator('dt', { hasText: 'Temperature' }).locator('xpath=following-sibling::dd[1]')
-  await expect(temperature).toHaveText('80 °C')
+  await expect(temperature).toHaveText('500 °C')
 })
 
 test('Clear empties the world and reload restores the title', async ({ page }) => {
