@@ -1,6 +1,6 @@
 # Try it here!
 
-![Live Site](https://jeremyflim.github.io/kinetic-pixels/)
+[Live Site](https://jeremyflim.github.io/kinetic-pixels/)
 
 # Kinetic Pixels
 
