@@ -167,7 +167,7 @@ test('time rate keys change worker tick throughput without changing the fixed si
 
 test('all blinking indicators share one console signal timeline', async ({ page }) => {
   await expect(page.locator('.device')).toHaveCSS('animation-name', 'console-signal-cycle')
-  await expect(page.locator('.device')).toHaveCSS('animation-duration', '1.35s')
+  await expect(page.locator('.device')).toHaveCSS('animation-duration', '1s')
   await expect(page.locator('.status-space b')).toHaveCSS('animation-name', 'none')
   await expect(page.locator('.startup-hint')).toHaveCSS('animation-name', 'none')
   await expect(page.locator('.screw-one')).toHaveCSS('animation-name', 'none')
