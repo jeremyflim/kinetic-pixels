@@ -32,3 +32,13 @@ test('memory dialog fits the smallest desktop viewport', async ({ page }) => {
   expect(box.y + box.height).toBeLessThanOrEqual(576)
   await expect(page).toHaveScreenshot('memory-dialog-1024x576.png', { animations: 'disabled', maxDiffPixelRatio: 0.01 })
 })
+
+test('zoom cube stays centered over its vertical track', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await page.goto('./')
+  await expect(page.locator('canvas')).toHaveAttribute('data-ready', 'true')
+  await expect(page.locator('.zoom-gauge')).toHaveScreenshot('zoom-gauge-centered-1920x1080.png', {
+    animations: 'disabled',
+    maxDiffPixelRatio: 0.001,
+  })
+})
