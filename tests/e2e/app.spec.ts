@@ -50,6 +50,12 @@ test('starts with the wooden title, Sand, paused state, and instruction', async 
   expect(await materialCount(page, 4)).toBe(TITLE_WOOD_CELLS)
 })
 
+test('clearly separates the playable canvas from its dark bezel', async ({ page }) => {
+  await expect(page.locator('.canvas-well')).toHaveCSS('background-color', 'rgb(33, 25, 44)')
+  await expect(page.locator('.canvas-stage')).toHaveCSS('outline-style', 'solid')
+  await expect(page.locator('canvas')).toHaveCSS('background-color', 'rgb(251, 248, 255)')
+})
+
 test('momentary action buttons visibly press into the console', async ({ page }) => {
   const clear = await pressStyles(page, '.console-button.destructive')
   expect(clear.pressed.translate).not.toBe(clear.before.translate)

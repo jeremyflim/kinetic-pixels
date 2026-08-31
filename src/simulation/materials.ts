@@ -13,9 +13,13 @@ export const MaterialId = {
 
 export type MaterialIdValue = (typeof MaterialId)[keyof typeof MaterialId]
 
-export const IGNITION_CHANCE = 0.12
-export const WOOD_BURN_DURATION = 420
-export const EMISSION_INTERVAL = 14
+export const IGNITION_CHANCE = 0.24
+export const FLASH_BURN_CHANCE = 0.015
+export const BURN_SPREAD_CHANCE = 0.08
+export const WOOD_BURN_DURATION = 110
+export const EMISSION_INTERVAL = 5
+export const FIRE_DRIFT_CHANCE = 0.4
+export const WATER_SPREAD_DISTANCE = 6
 export const FIRE_LIFETIME_MIN = 38
 export const FIRE_LIFETIME_MAX = 72
 export const SMOKE_LIFETIME_MIN = 90
@@ -86,6 +90,13 @@ function updateWood(world: World, { index, x, y }: UpdateContext): void {
     return
   }
 
+  for (const neighbor of adjacent) {
+    if (world.material[neighbor] !== MaterialId.Wood || (world.state[neighbor] & BURNING_FLAG)) continue
+    if (chance(world, BURN_SPREAD_CHANCE)) {
+      world.state[neighbor] |= BURNING_FLAG
+    }
+  }
+
   const progress = (cellState & BURN_PROGRESS_MASK) + 1
   if (progress >= WOOD_BURN_DURATION) {
     empty(world, index)
@@ -101,11 +112,8 @@ function updateWood(world: World, { index, x, y }: UpdateContext): void {
     if (!inBounds(world, targetX, targetY)) continue
     const target = at(world, targetX, targetY)
     if (world.material[target] !== MaterialId.Empty) continue
-    const emitFire = progress % (EMISSION_INTERVAL * 2) === 0
-    world.material[target] = emitFire ? MaterialId.Fire : MaterialId.Smoke
-    world.state[target] = emitFire
-      ? randomInt(world, FIRE_LIFETIME_MIN, FIRE_LIFETIME_MAX)
-      : randomInt(world, SMOKE_LIFETIME_MIN, SMOKE_LIFETIME_MAX)
+    world.material[target] = MaterialId.Smoke
+    world.state[target] = randomInt(world, SMOKE_LIFETIME_MIN, SMOKE_LIFETIME_MAX)
     world.updatedAt[target] = world.tick
     break
   }
@@ -141,20 +149,40 @@ function extinguishAroundWater(world: World, x: number, y: number): void {
 function updateWater(world: World, { index, x, y, direction }: UpdateContext): void {
   extinguishAroundWater(world, x, y)
   const attempts = y < world.height - 1
-    ? [[x, y + 1], [x + direction, y + 1], [x - direction, y + 1], [x + direction, y], [x - direction, y]]
-    : [[x + direction, y], [x - direction, y]]
+    ? [[x, y + 1], [x + direction, y + 1], [x - direction, y + 1]]
+    : []
   for (const [targetX, targetY] of attempts) {
     if (!inBounds(world, targetX, targetY)) continue
     const target = at(world, targetX, targetY)
     if (world.material[target] === MaterialId.Empty) return move(world, index, target)
+  }
+
+  for (const lateralDirection of [direction, -direction]) {
+    let destination = -1
+    for (let distance = 1; distance <= WATER_SPREAD_DISTANCE; distance += 1) {
+      const targetX = x + lateralDirection * distance
+      if (!inBounds(world, targetX, y)) break
+      const target = at(world, targetX, y)
+      if (world.material[target] !== MaterialId.Empty) break
+      destination = target
+    }
+    if (destination >= 0) return move(world, index, destination)
   }
   world.updatedAt[index] = world.tick
 }
 
 function igniteAdjacentWood(world: World, x: number, y: number): void {
   for (const neighbor of neighbors(world, x, y)) {
-    if (world.material[neighbor] !== MaterialId.Wood || (world.state[neighbor] & BURNING_FLAG)) continue
-    if (chance(world, IGNITION_CHANCE)) world.state[neighbor] |= BURNING_FLAG
+    if (world.material[neighbor] !== MaterialId.Wood) continue
+    if (chance(world, FLASH_BURN_CHANCE)) {
+      world.material[neighbor] = MaterialId.Smoke
+      world.state[neighbor] = randomInt(world, SMOKE_LIFETIME_MIN, SMOKE_LIFETIME_MAX)
+      world.updatedAt[neighbor] = world.tick
+      continue
+    }
+    if (!(world.state[neighbor] & BURNING_FLAG) && chance(world, IGNITION_CHANCE)) {
+      world.state[neighbor] |= BURNING_FLAG
+    }
   }
 }
 
@@ -170,7 +198,10 @@ function updateFire(world: World, { index, x, y, direction }: UpdateContext): vo
     return
   }
   world.state[index] = lifetime - 1
-  const attempts = [[x, y - 1], [x + direction, y - 1], [x - direction, y - 1]]
+  const driftDirection = chance(world, 0.5) ? 1 : -1
+  const attempts = chance(world, FIRE_DRIFT_CHANCE)
+    ? [[x + driftDirection, y - 1], [x, y - 1], [x - driftDirection, y - 1]]
+    : [[x, y - 1], [x + direction, y - 1], [x - direction, y - 1]]
   for (const [targetX, targetY] of attempts) {
     if (!inBounds(world, targetX, targetY)) continue
     const target = at(world, targetX, targetY)

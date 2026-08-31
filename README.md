@@ -98,10 +98,10 @@ Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1
 
 | 192 × 180 scenario | Mean tick | Throughput |
 | --- | ---: | ---: |
-| Fully occupied stationary grid | 1.22 ms | 821.22 ticks/s |
-| Falling Sand | 3.13 ms | 319.01 ticks/s |
-| Water spread | 5.07 ms | 197.40 ticks/s |
-| Burning Wood / Fire / Smoke | 4.79 ms | 208.88 ticks/s |
+| Fully occupied stationary grid | 1.18 ms | 850.40 ticks/s |
+| Falling Sand | 3.09 ms | 323.37 ticks/s |
+| Water spread | 4.79 ms | 208.60 ticks/s |
+| Burning Wood / Fire / Smoke | 5.12 ms | 195.32 ticks/s |
 
 These figures are descriptive rather than CI thresholds because shared runners have noisy timing.
 
