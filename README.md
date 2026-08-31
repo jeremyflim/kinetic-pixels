@@ -22,7 +22,8 @@ same way.
 
 ## Controls
 
-- Choose Sand, Water, Stone, Wood, or Fire from the Elements rail.
+- Choose Sand, Water, Stone, Wood, Fire, Oil, Plant, Acid, Metal, Lava, Ice,
+  Spark, or Gunpowder from the Elements rail. Glass, Smoke, and Steam are created by reactions.
 - Click, hold, or drag on the field to paint; a held pointer continually reapplies the brush.
   The first field click starts the simulation and paints.
 - `Space` toggles Play/Pause.
@@ -46,15 +47,15 @@ while paused.
 The simulation core under `src/simulation/` is independent of React, workers, and rendering.
 Material definitions use stable numeric IDs backed by one exported physical-properties table.
 Each entry declares phase, mobility, density, hardness, friction, conductivity, corrosiveness,
-temperature, ignition temperature, flammability, burn rate, and smoke yield. Movement and
-displacement consume those properties instead of duplicating per-material constants.
+heat behavior, flammability, burn rate, and smoke yield. Movement, displacement, corrosion,
+conductivity, ignition, and thermal transitions consume those properties.
 
-Cross-material behavior lives in an exported sparse, directional reaction registry. Only
-meaningful pairs are listed—such as Fire → Wood, Water → Fire, and burning Wood → Wood—so adding
-a material does not require filling a mostly empty square matrix. Parallel `Uint8Array`,
-`Uint16Array`, and `Uint32Array` channels store material, deterministic state, and per-tick update
-markers. A seeded xorshift PRNG is the only source of simulation randomness. Rendering variation
-is a stable coordinate/material hash rather than visual noise.
+Cross-material behavior lives in an exported sparse pair registry. Only meaningful pairs are
+listed, with explicit initiators, status requirements, real-time probability, and effects.
+Parallel typed-array channels keep material identity, progress/lifetime, temporary statuses,
+heat, and per-tick update markers separate. A seeded xorshift PRNG is the only source of
+simulation randomness. Rendering variation is a stable coordinate/material hash rather than
+visual noise.
 
 Further invariants and the worker contract are recorded in [docs/architecture.md](docs/architecture.md).
 
@@ -66,14 +67,15 @@ Local slots use exactly these versioned keys:
 - `kinetic-pixels:save:b`
 - `kinetic-pixels:save:c`
 
-A save records the material grid, per-cell state, tick, initial seed, current PRNG state,
+A save records the material, state, status, and heat grids, tick, initial seed, current PRNG state,
 format metadata, name, and timestamp. It does not record the selected tool, radius, dialog
 state, play state, startup hint, or pointer preview.
 
-JSON files use format `kinetic-pixels`, version `2`, fixed 192 × 180 dimensions, and Base64
-typed-array bytes. Imports are size-limited and fully validated before replacing the live world;
-bad JSON, unknown materials, unsupported versions, invalid dimensions, and decoded-length
-mismatches leave the current world untouched.
+JSON files use format `kinetic-pixels`, version `3`, fixed 192 × 180 dimensions, and Base64
+typed-array bytes. Version 2 saves remain loadable and migrate legacy burning state automatically.
+Imports are size-limited and fully validated before replacing the live world; bad JSON, unknown
+materials, unsupported versions, invalid dimensions, and decoded-length mismatches leave the
+current world untouched.
 
 ## Quality checks
 
@@ -106,10 +108,11 @@ Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1
 
 | 192 × 180 scenario | Mean tick | Throughput |
 | --- | ---: | ---: |
-| Fully occupied stationary grid | 1.35 ms | 743.01 ticks/s |
-| Falling Sand | 4.59 ms | 217.78 ticks/s |
-| Water spread | 6.85 ms | 145.91 ticks/s |
-| Burning Wood / Fire / Smoke | 6.87 ms | 145.61 ticks/s |
+| Fully occupied stationary grid | 1.27 ms | 786.64 ticks/s |
+| Falling Sand | 4.78 ms | 209.20 ticks/s |
+| Water spread | 6.88 ms | 145.35 ticks/s |
+| Fully occupied Lava / heat | 13.60 ms | 73.53 ticks/s |
+| Burning Wood / Fire / Smoke | 8.56 ms | 116.78 ticks/s |
 
 These figures are descriptive rather than CI thresholds because shared runners have noisy timing.
 
@@ -121,9 +124,9 @@ then publishes `dist/` with the official GitHub Pages actions.
 
 ## Compatibility
 
-The MVP targets current desktop Chromium with `OffscreenCanvas` in a dedicated worker. Mobile,
-broad cross-browser fallbacks, audio, WebGPU/WASM acceleration, automatic saving, and additional
-materials are intentionally deferred.
+The project targets current desktop Chromium with `OffscreenCanvas` in a dedicated worker.
+Mobile, broad cross-browser fallbacks, audio, WebGPU/WASM acceleration, and automatic saving are
+intentionally deferred.
 
 ## License
 

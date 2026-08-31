@@ -1,4 +1,4 @@
-import { Brush, CirclePlay, Droplets, Eraser, Flame, Gem, MemoryStick, Pause, Play, Sparkles, Trash2, Trees } from 'lucide-react'
+import { Bomb, Brush, CirclePlay, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, Snowflake, Sparkles, Trash2, Trees, Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MemoryCardDialog } from './MemoryCardDialog'
 import { MaterialId, PAINTABLE_MATERIALS } from './simulation/materials'
@@ -10,6 +10,14 @@ const ICONS: Record<string, typeof Sparkles> = {
   stone: Gem,
   wood: Trees,
   fire: Flame,
+  oil: Droplet,
+  plant: Leaf,
+  acid: FlaskConical,
+  metal: Cog,
+  lava: Mountain,
+  ice: Snowflake,
+  spark: Zap,
+  gunpowder: Bomb,
 }
 
 interface Point { x: number; y: number }
@@ -28,6 +36,8 @@ declare global {
       snapshot: () => Promise<Snapshot>
       count: (materialId: number) => Promise<number>
       cell: (x: number, y: number) => Promise<number>
+      status: (x: number, y: number) => Promise<number>
+      heat: (x: number, y: number) => Promise<number>
       tick: () => Promise<number>
     }
   }
@@ -100,6 +110,8 @@ export function App() {
       snapshot: requestSnapshot,
       count: async (materialId) => (await requestSnapshot()).material.reduce((count, value) => count + Number(value === materialId), 0),
       cell: async (x, y) => (await requestSnapshot()).material[y * GRID_WIDTH + x],
+      status: async (x, y) => (await requestSnapshot()).status[y * GRID_WIDTH + x],
+      heat: async (x, y) => (await requestSnapshot()).heat[y * GRID_WIDTH + x],
       tick: async () => (await requestSnapshot()).tick,
     }
     return () => { delete window.__KINETIC_PIXELS__ }

@@ -1,14 +1,18 @@
-import { MATERIAL_BY_ID } from './materials'
+import { MATERIAL_BY_ID, MaterialId, StatusFlag } from './materials'
 import { CELL_COUNT, GRID_HEIGHT, GRID_WIDTH, type Snapshot } from './types'
 
 export const SAVE_FORMAT = 'kinetic-pixels'
-export const SAVE_VERSION = 2
-export const MAX_IMPORT_BYTES = 1_500_000
+export const SAVE_VERSION = 3
+export const MAX_IMPORT_BYTES = 2_000_000
 
-export interface SaveFileV1 {
+interface SaveFileBase {
   format: typeof SAVE_FORMAT
-  version: typeof SAVE_VERSION
   grid: { width: number; height: number }
+  metadata: { name: string; savedAt: string }
+}
+
+export interface SaveFileV2 extends SaveFileBase {
+  version: 2
   simulation: {
     tick: number
     seed: number
@@ -16,10 +20,21 @@ export interface SaveFileV1 {
     material: string
     state: string
   }
-  metadata: { name: string; savedAt: string }
 }
 
+export interface SaveFileV3 extends SaveFileBase {
+  version: typeof SAVE_VERSION
+  simulation: SaveFileV2['simulation'] & {
+    status: string
+    heat: string
+  }
+}
+
+export type SaveFile = SaveFileV2 | SaveFileV3
+
 const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+const LEGACY_BURNING_FLAG = 0x8000
+const LEGACY_PROGRESS_MASK = 0x7fff
 
 export function bytesToBase64(bytes: Uint8Array): string {
   let output = ''
@@ -72,7 +87,7 @@ export function sanitizeSaveName(value: string, fallback: string): string {
   return value.trim().slice(0, 24) || fallback
 }
 
-export function serializeSnapshot(snapshot: Snapshot, name: string, savedAt = new Date().toISOString()): SaveFileV1 {
+export function serializeSnapshot(snapshot: Snapshot, name: string, savedAt = new Date().toISOString()): SaveFileV3 {
   return {
     format: SAVE_FORMAT,
     version: SAVE_VERSION,
@@ -83,6 +98,8 @@ export function serializeSnapshot(snapshot: Snapshot, name: string, savedAt = ne
       randomState: snapshot.randomState,
       material: bytesToBase64(snapshot.material),
       state: bytesToBase64(stateToBytes(snapshot.state)),
+      status: bytesToBase64(snapshot.status),
+      heat: bytesToBase64(snapshot.heat),
     },
     metadata: { name: name.slice(0, 24), savedAt },
   }
@@ -98,18 +115,36 @@ function finiteInteger(value: unknown, label: string): number {
   return value
 }
 
-export function parseSave(input: unknown): { file: SaveFileV1; snapshot: Snapshot } {
+function validateByteField(value: unknown, label: string): Uint8Array {
+  if (typeof value !== 'string') throw new Error('Save data is missing')
+  const bytes = base64ToBytes(value)
+  if (bytes.length !== CELL_COUNT) throw new Error(`${label} data length is invalid`)
+  return bytes
+}
+
+export function parseSave(input: unknown): { file: SaveFile; snapshot: Snapshot } {
   const root = record(input)
   if (root.format !== SAVE_FORMAT) throw new Error('Not a Kinetic Pixels save')
-  if (root.version !== SAVE_VERSION) throw new Error('Unsupported save version')
+  if (root.version !== 2 && root.version !== SAVE_VERSION) throw new Error('Unsupported save version')
   const grid = record(root.grid)
   if (grid.width !== GRID_WIDTH || grid.height !== GRID_HEIGHT) throw new Error('Save grid dimensions do not match')
   const simulation = record(root.simulation)
-  if (typeof simulation.material !== 'string' || typeof simulation.state !== 'string') throw new Error('Save data is missing')
-  const material = base64ToBytes(simulation.material)
+  const material = validateByteField(simulation.material, 'Material')
+  if (typeof simulation.state !== 'string') throw new Error('Save data is missing')
   const stateBytes = base64ToBytes(simulation.state)
-  if (material.length !== CELL_COUNT || stateBytes.length !== CELL_COUNT * 2) throw new Error('Save data length is invalid')
-  for (const materialId of material) if (!MATERIAL_BY_ID.has(materialId)) throw new Error('Save contains an unknown material')
+  if (stateBytes.length !== CELL_COUNT * 2) throw new Error('State data length is invalid')
+  const state = bytesToState(stateBytes)
+  const status = root.version === SAVE_VERSION ? validateByteField(simulation.status, 'Status') : new Uint8Array(CELL_COUNT)
+  const heat = root.version === SAVE_VERSION ? validateByteField(simulation.heat, 'Heat') : new Uint8Array(CELL_COUNT)
+
+  for (let index = 0; index < material.length; index += 1) {
+    if (!MATERIAL_BY_ID.has(material[index])) throw new Error('Save contains an unknown material')
+    if (root.version === 2 && material[index] === MaterialId.Wood && (state[index] & LEGACY_BURNING_FLAG)) {
+      status[index] |= StatusFlag.Burning
+      state[index] &= LEGACY_PROGRESS_MASK
+    }
+  }
+
   const metadata = record(root.metadata)
   if (typeof metadata.name !== 'string' || metadata.name.length > 24 || typeof metadata.savedAt !== 'string' || Number.isNaN(Date.parse(metadata.savedAt))) {
     throw new Error('Save metadata is invalid')
@@ -121,12 +156,14 @@ export function parseSave(input: unknown): { file: SaveFileV1; snapshot: Snapsho
     seed: finiteInteger(simulation.seed, 'Seed'),
     randomState: finiteInteger(simulation.randomState, 'Random state'),
     material,
-    state: bytesToState(stateBytes),
+    state,
+    status,
+    heat,
   }
-  return { file: root as unknown as SaveFileV1, snapshot }
+  return { file: root as unknown as SaveFile, snapshot }
 }
 
-export function parseSaveJson(text: string): { file: SaveFileV1; snapshot: Snapshot } {
+export function parseSaveJson(text: string): { file: SaveFile; snapshot: Snapshot } {
   if (new Blob([text]).size > MAX_IMPORT_BYTES) throw new Error('Save file is too large')
   try {
     return parseSave(JSON.parse(text) as unknown)

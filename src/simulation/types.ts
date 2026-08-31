@@ -7,6 +7,8 @@ export interface World {
   height: number
   material: Uint8Array
   state: Uint16Array
+  status: Uint8Array
+  heat: Uint8Array
   updatedAt: Uint32Array
   tick: number
   seed: number
@@ -33,8 +35,13 @@ export interface MaterialProperties {
   friction: number
   conductivity: boolean
   corrosiveness: number
-  temperature: number
-  ignitionTemperature: number | null
+  initialHeat: number
+  heatOutput: number
+  heatCapacity: number
+  coolingRate: number
+  ignitionHeat: number | null
+  transitionHeat: number | null
+  transitionProduct: number | null
   flammability: number
   burnRate: number
   smokeYield: number
@@ -58,4 +65,6 @@ export interface Snapshot {
   randomState: number
   material: Uint8Array
   state: Uint16Array
+  status: Uint8Array
+  heat: Uint8Array
 }

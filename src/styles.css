@@ -152,20 +152,20 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 .material-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.62cqw;
-  margin-top: 1.05cqw;
+  gap: 0.42cqw;
+  margin-top: 0.7cqw;
 }
 
 .material-button {
   position: relative;
-  aspect-ratio: 1 / 1.06;
+  aspect-ratio: 1 / 0.9;
   min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.32cqw;
-  padding: 0.35cqw 0.15cqw 0.66cqw;
+  gap: 0.2cqw;
+  padding: 0.24cqw 0.08cqw 0.5cqw;
   border: var(--line) solid var(--chrome-purple);
   border-radius: 0.16cqw;
   background: #f9f5ff;
@@ -174,12 +174,12 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
   color: var(--ink);
   text-transform: uppercase;
   font-weight: 900;
-  font-size: clamp(7px, 0.77cqw, 11px);
-  letter-spacing: 0.02em;
+  font-size: clamp(6px, 0.64cqw, 10px);
+  letter-spacing: 0;
 }
 
-.material-button svg { width: 1.75cqw; height: 1.75cqw; min-width: 12px; min-height: 12px; color: var(--ink); stroke-width: 2.4; }
-.material-button i { position: absolute; inset: auto 0.25cqw 0.22cqw; height: 0.22cqw; min-height: 2px; }
+.material-button svg { width: 1.45cqw; height: 1.45cqw; min-width: 11px; min-height: 11px; color: var(--ink); stroke-width: 2.4; }
+.material-button i { position: absolute; inset: auto 0.18cqw 0.15cqw; height: 0.18cqw; min-height: 2px; }
 .material-button:hover { background: var(--shell-highlight); }
 .material-button:active, .material-button.selected {
   transform: translate(0.12cqw, 0.12cqw);
@@ -190,15 +190,15 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 .material-button.selected::after {
   content: '';
   position: absolute;
-  top: 0.32cqw;
-  right: 0.32cqw;
-  width: 0.45cqw;
+  top: 0.2cqw;
+  right: 0.2cqw;
+  width: 0.34cqw;
   aspect-ratio: 1;
   border-radius: 50%;
   background: var(--mint);
   box-shadow: 0 0 0 0.1cqw #fff;
 }
-.material-button.last-material { grid-column: 1 / -1; width: calc((100% - 0.62cqw) / 2); justify-self: center; }
+.material-button.last-material { grid-column: 1 / -1; width: calc((100% - 0.42cqw) / 2); justify-self: center; }
 
 .rail-mark {
   margin-top: auto;

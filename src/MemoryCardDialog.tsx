@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { Download, FileDown, FileUp, MemoryStick, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { parseSave, parseSaveJson, sanitizeSaveName, serializeSnapshot, type SaveFileV1 } from './simulation/serialization'
+import { parseSave, parseSaveJson, sanitizeSaveName, serializeSnapshot, type SaveFile } from './simulation/serialization'
 import type { Snapshot } from './simulation/types'
 
 const SLOT_IDS = ['a', 'b', 'c'] as const
@@ -9,7 +9,7 @@ type SlotId = (typeof SLOT_IDS)[number]
 const storageKey = (slot: SlotId) => `kinetic-pixels:save:${slot}`
 
 interface StoredSlot {
-  file: SaveFileV1
+  file: SaveFile
   snapshot: Snapshot
 }
 

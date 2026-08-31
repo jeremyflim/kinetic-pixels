@@ -3,15 +3,17 @@ import { clearWorld, createWorld, paintStroke, replaceWorld, snapshotWorld, step
 import {
   BURN_PROGRESS_LIMIT,
   BURNING_WOOD_SPREAD_SCALE,
-  BURNING_FLAG,
   FIRE_LIFETIME_MIN,
+  MATERIALS,
   MATERIAL_PROPERTIES,
   MATERIAL_REACTIONS,
   MaterialId,
+  reactMaterialPair,
+  StatusFlag,
   WOOD_BURN_DURATION,
 } from './materials'
 import { cellColor } from './render'
-import { parseSave, serializeSnapshot } from './serialization'
+import { bytesToBase64, parseSave, serializeSnapshot } from './serialization'
 import { titleMask } from './title'
 
 function index(world: ReturnType<typeof createWorld>, x: number, y: number): number {
@@ -33,6 +35,7 @@ describe('materials', () => {
   it('defines a complete physical property table and sparse reaction registry', () => {
     const materialIds = Object.values(MaterialId)
     expect(Object.keys(MATERIAL_PROPERTIES)).toHaveLength(materialIds.length)
+    expect(MATERIALS.map((material) => material.id)).toEqual(materialIds)
     for (const materialId of materialIds) {
       const properties = MATERIAL_PROPERTIES[materialId]
       expect(properties.density).toBeGreaterThanOrEqual(0)
@@ -43,9 +46,9 @@ describe('materials', () => {
       expect(properties.flammability).toBeLessThanOrEqual(1)
     }
     expect(MATERIAL_REACTIONS).toEqual(expect.arrayContaining([
-      expect.objectContaining({ actor: MaterialId.Fire, target: MaterialId.Wood, effect: 'ignite-target' }),
-      expect.objectContaining({ actor: MaterialId.Water, target: MaterialId.Fire, effect: 'remove-target' }),
-      expect.objectContaining({ actor: MaterialId.Wood, target: MaterialId.Wood, effect: 'ignite-target' }),
+      expect.objectContaining({ materials: [MaterialId.Fire, MaterialId.Wood], initiator: MaterialId.Fire }),
+      expect.objectContaining({ materials: [MaterialId.Water, MaterialId.Fire], instant: true }),
+      expect.objectContaining({ materials: [MaterialId.Wood, MaterialId.Wood], chancePerSecond: 0.08 }),
     ]))
   })
 
@@ -173,15 +176,15 @@ describe('materials', () => {
   it('lets Fire ignite or immediately consume touching Wood', () => {
     const world = createWorld(7, false, 4, 4)
     world.material[index(world, 1, 2)] = MaterialId.Fire
-    world.state[index(world, 1, 2)] = FIRE_LIFETIME_MIN
+    world.state[index(world, 1, 2)] = 100
     world.material[index(world, 2, 2)] = MaterialId.Wood
     for (let x = 0; x < 3; x += 1) world.material[index(world, x, 1)] = MaterialId.Stone
-    for (let tick = 0; tick < 80 && world.material[index(world, 2, 2)] === MaterialId.Wood && !(world.state[index(world, 2, 2)] & BURNING_FLAG); tick += 1) {
+    for (let tick = 0; tick < 80 && world.material[index(world, 2, 2)] === MaterialId.Wood && !(world.status[index(world, 2, 2)] & StatusFlag.Burning); tick += 1) {
       stepWorld(world)
     }
     expect(
       world.material[index(world, 2, 2)] !== MaterialId.Wood
-      || Boolean(world.state[index(world, 2, 2)] & BURNING_FLAG),
+      || Boolean(world.status[index(world, 2, 2)] & StatusFlag.Burning),
     ).toBe(true)
   })
 
@@ -220,10 +223,12 @@ describe('materials', () => {
     world.material[index(world, 2, 1)] = MaterialId.Fire
     world.state[index(world, 2, 1)] = 20
     world.material[index(world, 3, 2)] = MaterialId.Wood
-    world.state[index(world, 3, 2)] = BURNING_FLAG | 23
+    world.status[index(world, 3, 2)] = StatusFlag.Burning
+    world.state[index(world, 3, 2)] = 23
     stepWorld(world)
     expect(world.material.includes(MaterialId.Fire)).toBe(false)
-    expect(world.state[index(world, 3, 2)]).toBe(23)
+    expect(world.status[index(world, 3, 2)] & StatusFlag.Burning).toBe(0)
+    expect(world.state[index(world, 3, 2)]).toBe(0)
     expect(world.material.includes(MaterialId.Water)).toBe(true)
   })
 
@@ -231,7 +236,7 @@ describe('materials', () => {
     const world = createWorld(9, false, 5, 64)
     const wood = index(world, 2, 60)
     world.material[wood] = MaterialId.Wood
-    world.state[wood] = BURNING_FLAG
+    world.status[wood] = StatusFlag.Burning
     for (let tick = 0; tick < WOOD_BURN_DURATION; tick += 1) stepWorld(world)
     const smokeCount = [...world.material].filter((material) => material === MaterialId.Smoke).length
     expect(smokeCount).toBeGreaterThan(0)
@@ -239,7 +244,8 @@ describe('materials', () => {
     expect(world.material.includes(MaterialId.Fire)).toBe(false)
     expect(WOOD_BURN_DURATION).toBeLessThanOrEqual(60)
     world.material[wood] = MaterialId.Wood
-    world.state[wood] = BURNING_FLAG | (BURN_PROGRESS_LIMIT - MATERIAL_PROPERTIES[MaterialId.Wood].burnRate)
+    world.status[wood] = StatusFlag.Burning
+    world.state[wood] = BURN_PROGRESS_LIMIT - MATERIAL_PROPERTIES[MaterialId.Wood].burnRate
     stepWorld(world)
     expect(world.material[wood]).toBe(MaterialId.Empty)
   })
@@ -253,10 +259,10 @@ describe('materials', () => {
       const burning = index(world, 2, 4)
       const neighbor = index(world, 3, 4)
       world.material[burning] = MaterialId.Wood
-      world.state[burning] = BURNING_FLAG
+      world.status[burning] = StatusFlag.Burning
       world.material[neighbor] = MaterialId.Wood
       stepWorld(world)
-      if (world.state[neighbor] & BURNING_FLAG) ignitions += 1
+      if (world.status[neighbor] & StatusFlag.Burning) ignitions += 1
       createdFire ||= world.material.includes(MaterialId.Fire)
     }
     const spreadChance = BURNING_WOOD_SPREAD_SCALE * MATERIAL_PROPERTIES[MaterialId.Wood].flammability
@@ -271,7 +277,8 @@ describe('materials', () => {
     const wood = index(world, 1, 1)
     world.material[wood] = MaterialId.Wood
     const normalColor = cellColor(world, wood)
-    world.state[wood] = BURNING_FLAG | 20
+    world.status[wood] = StatusFlag.Burning
+    world.state[wood] = 20
     const burningColor = cellColor(world, wood)
     expect(burningColor).not.toEqual(normalColor)
     expect([
@@ -308,6 +315,162 @@ describe('materials', () => {
     expect(deltas.has(1)).toBe(true)
   })
 
+  it('carries heat and statuses with moving particles', () => {
+    const world = createWorld(21, false, 3, 4)
+    const sand = index(world, 1, 1)
+    world.material[sand] = MaterialId.Sand
+    world.heat[sand] = 80
+    world.status[sand] = StatusFlag.Wet
+    stepWorld(world)
+    const moved = world.material.findIndex((material) => material === MaterialId.Sand)
+    expect(moved).not.toBe(sand)
+    expect(world.heat[moved]).toBe(80)
+    expect(world.status[moved]).toBe(StatusFlag.Wet)
+    expect(world.heat[sand]).toBe(0)
+    expect(world.status[sand]).toBe(0)
+  })
+
+  it('turns sustained Fire-heated Sand into Glass without an instant contact reaction', () => {
+    const world = createWorld(22, false, 5, 5)
+    const sand = index(world, 2, 1)
+    const fire = index(world, 2, 2)
+    world.material[sand] = MaterialId.Sand
+    world.material[index(world, 1, 1)] = MaterialId.Stone
+    world.material[index(world, 3, 1)] = MaterialId.Stone
+    world.material[index(world, 1, 2)] = MaterialId.Stone
+    world.material[index(world, 3, 2)] = MaterialId.Stone
+    let transformedAt = -1
+    for (let tick = 0; tick < 300 && transformedAt < 0; tick += 1) {
+      if (world.material[fire] === MaterialId.Empty) {
+        world.material[fire] = MaterialId.Fire
+        world.state[fire] = FIRE_LIFETIME_MIN
+        world.heat[fire] = MATERIAL_PROPERTIES[MaterialId.Fire].initialHeat
+      }
+      stepWorld(world)
+      if (world.material[sand] === MaterialId.Glass) transformedAt = tick + 1
+    }
+    expect(transformedAt).toBeGreaterThan(120)
+    expect(transformedAt).toBeLessThan(300)
+  })
+
+  it('uses heat thresholds for ignition and phase changes', () => {
+    const world = createWorld(23, false, 4, 4)
+    const wood = index(world, 0, 3)
+    const sand = index(world, 1, 3)
+    const water = index(world, 2, 3)
+    const ice = index(world, 3, 3)
+    world.material[wood] = MaterialId.Wood
+    world.material[sand] = MaterialId.Sand
+    world.material[water] = MaterialId.Water
+    world.material[ice] = MaterialId.Ice
+    world.heat[wood] = MATERIAL_PROPERTIES[MaterialId.Wood].ignitionHeat!
+    world.heat[sand] = MATERIAL_PROPERTIES[MaterialId.Sand].transitionHeat!
+    world.heat[water] = MATERIAL_PROPERTIES[MaterialId.Water].transitionHeat!
+    world.heat[ice] = MATERIAL_PROPERTIES[MaterialId.Ice].transitionHeat!
+    stepWorld(world)
+    expect(world.status[wood] & StatusFlag.Burning).toBe(StatusFlag.Burning)
+    expect(world.material[sand]).toBe(MaterialId.Glass)
+    expect(world.material[water]).toBe(MaterialId.Steam)
+    expect(world.material[ice]).toBe(MaterialId.Water)
+  })
+
+  it('lets denser Water settle below Oil', () => {
+    const world = createWorld(24, false, 1, 4)
+    world.material[index(world, 0, 1)] = MaterialId.Water
+    world.material[index(world, 0, 2)] = MaterialId.Oil
+    world.material[index(world, 0, 3)] = MaterialId.Stone
+    stepWorld(world)
+    expect(world.material[index(world, 0, 1)]).toBe(MaterialId.Oil)
+    expect(world.material[index(world, 0, 2)]).toBe(MaterialId.Water)
+  })
+
+  it('turns Lava and Water into Stone and Steam', () => {
+    const world = createWorld(25, false, 3, 4)
+    const water = index(world, 1, 1)
+    const lava = index(world, 1, 2)
+    world.material[water] = MaterialId.Water
+    world.material[lava] = MaterialId.Lava
+    reactMaterialPair(world, lava, water)
+    expect(world.material[lava]).toBe(MaterialId.Stone)
+    expect(world.material[water]).toBe(MaterialId.Steam)
+  })
+
+  it('condenses Steam against Ice without immediately boiling the result again', () => {
+    const world = createWorld(251, false, 3, 3)
+    const steam = index(world, 1, 1)
+    const ice = index(world, 1, 2)
+    world.material[steam] = MaterialId.Steam
+    world.heat[steam] = MATERIAL_PROPERTIES[MaterialId.Steam].initialHeat
+    world.material[ice] = MaterialId.Ice
+    reactMaterialPair(world, steam, ice)
+    expect(world.material[steam]).toBe(MaterialId.Water)
+    expect(world.material[ice]).toBe(MaterialId.Water)
+    expect(world.heat[steam]).toBe(0)
+    expect(world.heat[ice]).toBe(0)
+  })
+
+  it('grows Plant slowly beside contained Water', () => {
+    const world = createWorld(26, false, 5, 6)
+    const plant = index(world, 2, 3)
+    const water = index(world, 2, 4)
+    world.material[plant] = MaterialId.Plant
+    world.material[water] = MaterialId.Water
+    world.material[index(world, 1, 4)] = MaterialId.Stone
+    world.material[index(world, 3, 4)] = MaterialId.Stone
+    for (let x = 0; x < world.width; x += 1) world.material[index(world, x, 5)] = MaterialId.Stone
+    for (let tick = 0; tick < 120; tick += 1) stepWorld(world)
+    expect([...world.material].filter((material) => material === MaterialId.Plant).length).toBeGreaterThan(1)
+  })
+
+  it('lets Acid corrode selected materials while Stone and Glass remain inert', () => {
+    const world = createWorld(27, false, 5, 2)
+    const acid = index(world, 0, 0)
+    const plant = index(world, 1, 0)
+    const stone = index(world, 2, 0)
+    const glass = index(world, 3, 0)
+    world.material[acid] = MaterialId.Acid
+    world.material[plant] = MaterialId.Plant
+    world.material[stone] = MaterialId.Stone
+    world.material[glass] = MaterialId.Glass
+    for (let attempt = 0; attempt < 600 && world.material[plant] === MaterialId.Plant; attempt += 1) reactMaterialPair(world, acid, plant)
+    expect(world.material[plant]).toBe(MaterialId.Empty)
+    expect(reactMaterialPair(world, acid, stone)).toBe(false)
+    expect(reactMaterialPair(world, acid, glass)).toBe(false)
+    expect(world.material[stone]).toBe(MaterialId.Stone)
+    expect(world.material[glass]).toBe(MaterialId.Glass)
+  })
+
+  it('models wet Gunpowder as a temporary status that blocks ignition', () => {
+    const world = createWorld(28, false, 3, 3)
+    const powder = index(world, 1, 2)
+    world.material[powder] = MaterialId.Gunpowder
+    world.material[index(world, 0, 2)] = MaterialId.Water
+    world.material[index(world, 2, 2)] = MaterialId.Stone
+    world.status[powder] = StatusFlag.Wet
+    world.heat[powder] = 255
+    stepWorld(world)
+    expect(world.material[powder]).toBe(MaterialId.Gunpowder)
+    expect(world.status[powder] & StatusFlag.Burning).toBe(0)
+    world.material[index(world, 0, 2)] = MaterialId.Empty
+    world.status[powder] = 0
+    stepWorld(world)
+    expect(world.status[powder] & StatusFlag.Burning).toBe(StatusFlag.Burning)
+    stepWorld(world)
+    expect(world.material.includes(MaterialId.Fire)).toBe(true)
+  })
+
+  it('lets Spark charge conductive Metal', () => {
+    const world = createWorld(29, false, 3, 5)
+    const metal = index(world, 1, 2)
+    const spark = index(world, 1, 3)
+    world.material[metal] = MaterialId.Metal
+    world.material[spark] = MaterialId.Spark
+    world.state[spark] = 4
+    stepWorld(world)
+    expect(world.material.includes(MaterialId.Spark)).toBe(false)
+    expect(world.status[metal] & StatusFlag.Charged).toBe(StatusFlag.Charged)
+  })
+
   it('marks updated cells no later than the current tick', () => {
     const world = createWorld(11, false, 4, 4)
     world.material[index(world, 1, 1)] = MaterialId.Sand
@@ -326,16 +489,22 @@ describe('world commands and persistence', () => {
     for (let tick = 0; tick < 20; tick += 1) { stepWorld(first); stepWorld(second) }
     expect(first.material).toEqual(second.material)
     expect(first.state).toEqual(second.state)
+    expect(first.status).toEqual(second.status)
+    expect(first.heat).toEqual(second.heat)
     expect(first.randomState).toBe(second.randomState)
   })
 
   it('clears every world and transient array', () => {
     const world = createWorld(12)
     world.state.fill(99)
+    world.status.fill(StatusFlag.Wet)
+    world.heat.fill(200)
     world.updatedAt.fill(4)
     clearWorld(world)
     expect(world.material.every((value) => value === 0)).toBe(true)
     expect(world.state.every((value) => value === 0)).toBe(true)
+    expect(world.status.every((value) => value === 0)).toBe(true)
+    expect(world.heat.every((value) => value === 0)).toBe(true)
     expect(world.updatedAt.every((value) => value === 0)).toBe(true)
   })
 
@@ -346,8 +515,40 @@ describe('world commands and persistence', () => {
     const parsed = parseSave(serialized)
     expect(parsed.snapshot.material).toEqual(world.material)
     expect(parsed.snapshot.state).toEqual(world.state)
+    expect(parsed.snapshot.status).toEqual(world.status)
+    expect(parsed.snapshot.heat).toEqual(world.heat)
     expect(parsed.snapshot.tick).toBe(world.tick)
+    expect(parsed.file.version).toBe(3)
+  })
+
+  it('migrates version 2 burning state into status and initializes heat', () => {
+    const world = createWorld(30)
+    const wood = index(world, 1, 1)
+    world.material[wood] = MaterialId.Wood
+    const current = serializeSnapshot(snapshotWorld(world), 'LEGACY', '2026-08-31T00:00:00.000Z')
+    const legacyState = new Uint16Array(world.state.length)
+    legacyState[wood] = 0x8000 | 17
+    const legacyBytes = new Uint8Array(legacyState.length * 2)
+    const view = new DataView(legacyBytes.buffer)
+    legacyState.forEach((value, cell) => view.setUint16(cell * 2, value, true))
+    const legacy = {
+      format: current.format,
+      version: 2,
+      grid: current.grid,
+      simulation: {
+        tick: current.simulation.tick,
+        seed: current.simulation.seed,
+        randomState: current.simulation.randomState,
+        material: current.simulation.material,
+        state: bytesToBase64(legacyBytes),
+      },
+      metadata: current.metadata,
+    }
+    const parsed = parseSave(legacy)
     expect(parsed.file.version).toBe(2)
+    expect(parsed.snapshot.status[wood] & StatusFlag.Burning).toBe(StatusFlag.Burning)
+    expect(parsed.snapshot.state[wood]).toBe(17)
+    expect(parsed.snapshot.heat.every((value) => value === 0)).toBe(true)
   })
 
   it('rejects invalid saves before mutating a world', () => {
@@ -362,6 +563,8 @@ describe('world commands and persistence', () => {
     const target = createWorld(16, false)
     replaceWorld(target, snapshotWorld(source))
     expect(target.material).toEqual(source.material)
+    expect(target.status).toEqual(source.status)
+    expect(target.heat).toEqual(source.heat)
     expect(target.seed).toBe(source.seed)
   })
 })

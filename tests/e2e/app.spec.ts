@@ -50,6 +50,33 @@ test('starts with the wooden title, Sand, paused state, and instruction', async 
   expect(await materialCount(page, 4)).toBe(TITLE_WOOD_CELLS)
 })
 
+test('shows the complete paintable material palette inside the element rail', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 576 })
+  const expected = ['Sand', 'Water', 'Stone', 'Wood', 'Fire', 'Oil', 'Plant', 'Acid', 'Metal', 'Lava', 'Ice', 'Spark', 'Gunpowder']
+  const buttons = page.locator('.material-button')
+  await expect(buttons).toHaveCount(expected.length)
+  for (const label of expected) await expect(page.getByRole('button', { name: label })).toBeVisible()
+
+  const railBox = await page.locator('.left-rail').boundingBox()
+  if (!railBox) throw new Error('Element rail did not render')
+  for (const button of await buttons.all()) {
+    const box = await button.boundingBox()
+    if (!box) throw new Error('Material button did not render')
+    expect(box.x).toBeGreaterThanOrEqual(railBox.x)
+    expect(box.y).toBeGreaterThanOrEqual(railBox.y)
+    expect(box.x + box.width).toBeLessThanOrEqual(railBox.x + railBox.width)
+    expect(box.y + box.height).toBeLessThanOrEqual(railBox.y + railBox.height)
+  }
+  const lastButtonBox = await buttons.last().boundingBox()
+  const markBox = await page.locator('.rail-mark').boundingBox()
+  if (!lastButtonBox || !markBox) throw new Error('Palette footer did not render')
+  expect(lastButtonBox.y + lastButtonBox.height).toBeLessThanOrEqual(markBox.y)
+
+  await page.getByRole('button', { name: 'Gunpowder' }).click()
+  await expect(page.getByRole('button', { name: 'Gunpowder' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByText('Gunpowder', { exact: true }).last()).toBeVisible()
+})
+
 test('clearly separates the playable canvas from its dark bezel', async ({ page }) => {
   await expect(page.locator('.canvas-well')).toHaveCSS('background-color', 'rgb(33, 25, 44)')
   await expect(page.locator('.canvas-stage')).toHaveCSS('outline-style', 'solid')

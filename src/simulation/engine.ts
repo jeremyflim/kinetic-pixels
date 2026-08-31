@@ -1,4 +1,4 @@
-import { MATERIAL_BY_ID, MaterialId, initializeTransientState } from './materials'
+import { MATERIAL_BY_ID, MaterialId, initializeTransientState, updateThermalWorld } from './materials'
 import { normalizeSeed } from './random'
 import { rasterizeTitle } from './title'
 import { GRID_HEIGHT, GRID_WIDTH, type MaterialMobility, type Snapshot, type World } from './types'
@@ -14,6 +14,8 @@ export function createWorld(seed = 0x4b504958, withTitle = true, width = GRID_WI
     height,
     material: new Uint8Array(width * height),
     state: new Uint16Array(width * height),
+    status: new Uint8Array(width * height),
+    heat: new Uint8Array(width * height),
     updatedAt: new Uint32Array(width * height),
     tick: 0,
     seed: normalizedSeed,
@@ -47,11 +49,14 @@ export function stepWorld(world: World): void {
   updatePass(world, STATIONARY_MOBILITIES, false)
   updatePass(world, FALLING_MOBILITIES, false)
   updatePass(world, RISING_MOBILITIES, true)
+  updateThermalWorld(world)
 }
 
 export function clearWorld(world: World): void {
   world.material.fill(0)
   world.state.fill(0)
+  world.status.fill(0)
+  world.heat.fill(0)
   world.updatedAt.fill(0)
 }
 
@@ -72,6 +77,8 @@ export function paintCircle(world: World, centerX: number, centerY: number, radi
       if (erase) {
         world.material[index] = MaterialId.Empty
         world.state[index] = 0
+        world.status[index] = 0
+        world.heat[index] = 0
       } else if (world.material[index] === MaterialId.Empty && MATERIAL_BY_ID.get(materialId)?.paintable) {
         world.material[index] = materialId
         initializeTransientState(world, index, materialId)
@@ -98,14 +105,23 @@ export function snapshotWorld(world: World): Snapshot {
     randomState: world.randomState,
     material: world.material.slice(),
     state: world.state.slice(),
+    status: world.status.slice(),
+    heat: world.heat.slice(),
   }
 }
 
 export function replaceWorld(world: World, snapshot: Snapshot): void {
   if (snapshot.width !== world.width || snapshot.height !== world.height) throw new Error('World dimensions do not match')
-  if (snapshot.material.length !== world.material.length || snapshot.state.length !== world.state.length) throw new Error('World data length does not match')
+  if (
+    snapshot.material.length !== world.material.length
+    || snapshot.state.length !== world.state.length
+    || snapshot.status.length !== world.status.length
+    || snapshot.heat.length !== world.heat.length
+  ) throw new Error('World data length does not match')
   world.material.set(snapshot.material)
   world.state.set(snapshot.state)
+  world.status.set(snapshot.status)
+  world.heat.set(snapshot.heat)
   world.updatedAt.fill(0)
   world.tick = snapshot.tick >>> 0
   world.seed = normalizeSeed(snapshot.seed)

@@ -9,8 +9,9 @@ core has no React, DOM, worker, or canvas dependencies.
 
 - Material IDs are stable, numeric, and resolved through the registry.
 - `MATERIAL_PROPERTIES` is the authoritative table for intrinsic physical behavior.
-- `MATERIAL_REACTIONS` is sparse, ordered, and directional; unlisted pairs do not react.
-- The world uses parallel typed arrays for material, state, and last-updated tick.
+- `MATERIAL_REACTIONS` is sparse and pair-based; unlisted pairs do not react.
+- The world uses parallel typed arrays for material, progress/lifetime state, status flags,
+  heat, and last-updated tick.
 - Simulation randomness comes only from the serialized seeded PRNG.
 - Every cell is updated at most once per tick.
 - Falling passes scan bottom-to-top; rising passes scan top-to-bottom.
@@ -27,16 +28,26 @@ Every material declares a phase (`vacuum`, `solid`, `liquid`, `gas`, or `energy`
 (`none`, `immovable`, `powder`, `fluid`, or `rising`). Update passes are scheduled from mobility,
 which keeps immovable and movable solids distinct without special-casing their IDs.
 
-Density controls displacement, friction controls drift and liquid reach, and the combustion
-properties control ignition probability, burn progress, and Smoke yield. Hardness,
-conductivity, and corrosiveness are normalized properties available to future reactions;
-temperature and ignition temperature already gate ignition reactions. Temperatures are degrees
-Celsius, while density is a relative simulation value and normalized properties range from 0–1.
+Density controls displacement, friction controls drift and liquid reach, hardness resists Acid,
+conductivity routes Spark energy, and corrosiveness scales corrosion. Thermal properties define
+initial heat, emitted heat, heat capacity, cooling, ignition thresholds, and persistent material
+transitions. Heat is an intentionally abstract 0–255 gameplay quantity rather than Celsius.
+Flammability, burn rate, and Smoke yield control combustion after ignition.
 
-Reactions are data entries with an actor, target, optional state/heat conditions, probability,
-and effect. Multiple ordered entries may exist for a pair, allowing Fire → Wood to attempt a rare
-immediate conversion before ordinary ignition. The registry is intentionally sparse instead of a
-dense matrix because most material pairs have no interaction.
+Material identity answers what a cell is. `state` stores progress or transient lifetime, `status`
+stores temporary conditions (`Burning`, `Wet`, and `Charged`), and `heat` stores transferable
+thermal exposure. A persistent phase or behavior change receives a new material ID; temporary
+conditions do not.
+
+Reactions are unordered material-pair entries with explicit initiators, optional status
+conditions, probabilities expressed per second, and effects on either participant. Immediate
+rules handle events such as Water extinguishing Fire and Lava flashing Water into Steam. Heat
+thresholds handle sustained processes such as Sand becoming Glass and Wood igniting. The
+registry is intentionally sparse instead of a dense matrix because most pairs do not interact.
+
+Version 3 saves serialize every canonical array. Version 2 files remain accepted; their packed
+Wood burning flag migrates into the status channel and their new heat/status channels initialize
+to zero before the world is replaced.
 
 ## Worker protocol
 
