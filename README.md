@@ -33,7 +33,9 @@ same way.
 - `Space` toggles Play/Pause.
 - `E` toggles Eraser and restores the previously selected material when toggled off.
 - `I` toggles See Stats. While active, hovering a cell—including air—shows its live state and
-  material properties without painting or starting the simulation.
+  material properties while normal painting remains available.
+- Scroll over the field to zoom toward the pointed cell. The vertical field gauge also controls
+  zoom from 100–400% and can return the view to 100%.
 - `-`, `=`, and `+` change the circular brush radius from 1–20 cells.
 - Clear empties the world without restoring the title or changing the current tool, radius,
   or play state.
@@ -57,7 +59,8 @@ combustion, moisture, blast resistance, conductivity, and corrosion properties.
 
 Temperature persists in every cell, including empty air. A shared, unbounded local diffusion
 solver conducts it across every connected chain of cells and drives latent phase transitions
-and ignition. Air relaxes toward room temperature slowly instead of imposing a range cutoff.
+and ignition. Air relaxes toward room temperature in proportion to its temperature difference,
+with a slower final approach near ambient, instead of imposing a range cutoff.
 A second shared solver absorbs and diffuses moisture through porous materials,
 spends finite Water mass, and consumes heat while drying. Combustion consumes fuel and feeds
 heat back into the same thermal field, so fire spread emerges from temperature rather than
@@ -122,11 +125,11 @@ Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1
 
 | 192 × 180 scenario | Mean tick | Throughput |
 | --- | ---: | ---: |
-| Fully occupied stationary grid | 3.21 ms | 311.31 ticks/s |
-| Falling Sand | 7.27 ms | 137.58 ticks/s |
-| Water spread | 5.27 ms | 189.87 ticks/s |
-| Fully occupied Lava / thermal field | 8.68 ms | 115.21 ticks/s |
-| Burning Wood / Fire / Smoke | 14.00 ms | 71.40 ticks/s |
+| Fully occupied stationary grid | 3.30 ms | 302.97 ticks/s |
+| Falling Sand | 6.69 ms | 149.39 ticks/s |
+| Water spread | 5.55 ms | 180.03 ticks/s |
+| Fully occupied Lava / thermal field | 8.66 ms | 115.53 ticks/s |
+| Burning Wood / Fire / Smoke | 8.03 ms | 124.54 ticks/s |
 
 These figures are descriptive rather than CI thresholds because shared runners have noisy timing.
 

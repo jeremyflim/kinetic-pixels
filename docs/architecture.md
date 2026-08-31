@@ -35,10 +35,12 @@ conductivity routes the current Spark charge behavior, and corrosiveness scales 
 Thermal conductivity and heat capacity drive a shared temperature solver. Every cell—including
 empty air—retains a Celsius-like gameplay temperature. Cardinal conduction is double-buffered
 and has no distance cutoff: energy reaches distant cells by repeatedly crossing local edges.
-Empty air is staggered across eight thermal passes for a slow one-degree relaxation toward room
-temperature, preventing ambient cooling from erasing the field prematurely.
+Air far from room temperature cools proportionally to that difference; the final sub-degree
+integer remainder is staggered across eight thermal passes.
 
-Phase transitions are material properties with directional thresholds and latent progress.
+Phase transitions are material properties with directional thresholds and latent energy.
+Crossing a threshold moves excess energy into phase progress and pins the cell at the threshold;
+conversion completes only after continued heating or cooling supplies the full requirement.
 Water/Ice/Steam and Stone/Lava therefore change through energy transfer instead of contact-pair
 outcomes. Moisture absorption and diffusion use capacity and permeability properties; finite
 Water mass is spent as porous cells become wet. Evaporation consumes temperature.
@@ -76,3 +78,5 @@ The worker renders one logical pixel per cell to a 192 × 180 offscreen buffer. 
 variation is a stable hash of material, coordinates, cell state, and seed. CSS scales the canvas
 with `image-rendering: pixelated` while preserving the grid's 16:15 aspect ratio. A low-opacity
 red/blue thermal tint applies to every cell, including air, so the continuous field is visible.
+The fixed viewport can magnify its canvas from 100–400%; pointer-centered wheel calculations
+preserve the sampled world cell while the zoom gauge provides keyboard and direct-slider control.

@@ -1,5 +1,6 @@
 import {
   AMBIENT_TEMPERATURE,
+  AIR_COOLING_DIVISOR,
   AIR_COOLING_INTERVAL,
   MAXIMUM_TEMPERATURE,
   MINIMUM_TEMPERATURE,
@@ -53,8 +54,13 @@ function conductTemperature(world: World): void {
       const index = y * world.width + x
       if (x + 1 < world.width) exchangeTemperature(world, index, index + 1)
       if (y + 1 < world.height) exchangeTemperature(world, index, index + world.width)
-      if (world.material[index] === MaterialId.Empty && index % AIR_COOLING_INTERVAL === coolingFrame) {
-        world.temperatureDelta[index] += Math.sign(AMBIENT_TEMPERATURE - world.temperature[index])
+      if (world.material[index] === MaterialId.Empty) {
+        const ambientDifference = AMBIENT_TEMPERATURE - world.temperature[index]
+        const proportionalCooling = Math.trunc(ambientDifference / AIR_COOLING_DIVISOR)
+        if (proportionalCooling !== 0) world.temperatureDelta[index] += proportionalCooling
+        else if (ambientDifference !== 0 && index % AIR_COOLING_INTERVAL === coolingFrame) {
+          world.temperatureDelta[index] += Math.sign(ambientDifference)
+        }
       }
     }
   }
@@ -77,9 +83,16 @@ function updatePhaseAndIgnition(world: World): void {
       : world.temperature[index] <= candidate.temperature)
     if (transition) {
       const distance = Math.abs(world.temperature[index] - transition.temperature)
-      world.phaseProgress[index] = Math.min(65_535, world.phaseProgress[index] + 4 + Math.ceil(distance / 8))
+      const availableEnergy = distance * materialProperties.heatCapacity
+      const neededEnergy = Math.max(0, transition.latentHeat - world.phaseProgress[index])
+      const absorbedEnergy = Math.min(availableEnergy, neededEnergy)
+      world.phaseProgress[index] = Math.min(65_535, world.phaseProgress[index] + absorbedEnergy)
+      const direction = transition.direction === 'above' ? 1 : -1
+      world.temperature[index] = transition.temperature
       if (world.phaseProgress[index] >= transition.latentHeat) {
-        const retainedTemperature = world.temperature[index]
+        const productProperties = MATERIAL_PROPERTIES[transition.product as MaterialIdValue]
+        const remainingEnergy = availableEnergy - absorbedEnergy
+        const retainedTemperature = transition.temperature + direction * Math.trunc(remainingEnergy / productProperties.heatCapacity)
         setMaterialCell(world, index, transition.product as MaterialIdValue, retainedTemperature)
         materialProperties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
       }

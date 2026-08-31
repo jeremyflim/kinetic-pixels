@@ -51,12 +51,12 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
   [MaterialId.Wood]: {
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 8, hardness: 0.45, friction: 0.8,
     thermalConductivity: 20, heatCapacity: 3, blastResistance: 0.48,
-    ignitionTemperature: 160, fuel: 255, burnRate: 3, combustionHeat: 28, smokeYield: 0.012,
+    ignitionTemperature: 160, fuel: 255, burnRate: 3, combustionHeat: 20, smokeYield: 0.012,
     moistureCapacity: 180, moistureAbsorption: 32, moistureDiffusivity: 24,
   },
   [MaterialId.Fire]: {
     ...inertProperties, phase: 'energy', mobility: 'rising', density: 0.02, friction: 0.05,
-    initialTemperature: 1_000, thermalConductivity: 48, blastResistance: 0,
+    initialTemperature: 600, thermalConductivity: 48, blastResistance: 0,
   },
   [MaterialId.Smoke]: {
     ...inertProperties, phase: 'gas', mobility: 'rising', density: 0.01, friction: 0.12,
@@ -65,7 +65,7 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
   [MaterialId.Oil]: {
     ...inertProperties, phase: 'liquid', mobility: 'fluid', density: 1, friction: 0.025,
     thermalConductivity: 12, heatCapacity: 3, blastResistance: 0.08,
-    ignitionTemperature: 145, fuel: 255, burnRate: 3, combustionHeat: 18, smokeYield: 0.012,
+    ignitionTemperature: 145, fuel: 255, burnRate: 3, combustionHeat: 16, smokeYield: 0.012,
   },
   [MaterialId.Plant]: {
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 4, hardness: 0.1, friction: 0.75,
@@ -93,13 +93,13 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
   },
   [MaterialId.Spark]: {
     ...inertProperties, phase: 'energy', mobility: 'rising', density: 0.005, friction: 0.02,
-    initialTemperature: 1_600, thermalConductivity: 80, blastResistance: 0,
+    initialTemperature: 800, thermalConductivity: 80, blastResistance: 0,
   },
   [MaterialId.Gunpowder]: {
     ...inertProperties, phase: 'solid', mobility: 'powder', density: 4, hardness: 0.15, friction: 0.62,
     thermalConductivity: 18, heatCapacity: 2, blastResistance: 0.05,
     ignitionTemperature: 160, fuel: 255, burnRate: 255, combustionHeat: 80, smokeYield: 0.02,
-    explosionRadius: 5, explosionHeat: 2_400, explosionPressure: 1.35,
+    explosionRadius: 5, explosionHeat: 1_600, explosionPressure: 1.35,
     moistureCapacity: 255, moistureAbsorption: 28, moistureDiffusivity: 72,
   },
   [MaterialId.Glass]: {

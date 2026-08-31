@@ -164,14 +164,19 @@ describe('shared thermal physics', () => {
       stepWorld(world)
     }
     expect(world.temperature[distantAir]).toBeGreaterThan(AMBIENT_TEMPERATURE + 5)
+    expect(world.temperature[distantAir]).toBeLessThan(200)
   })
 
-  it('returns isolated hot air toward room temperature very slowly', () => {
-    const world = createWorld(107, false, 1, 1)
-    world.temperature[0] = 500
-    step(world, 120)
-    expect(world.temperature[0]).toBeGreaterThan(485)
-    expect(world.temperature[0]).toBeLessThan(500)
+  it('cools air toward room temperature in proportion to its temperature difference', () => {
+    const hot = createWorld(107, false, 1, 1)
+    const warm = createWorld(108, false, 1, 1)
+    hot.temperature[0] = 500
+    warm.temperature[0] = 100
+    step(hot, 120)
+    step(warm, 120)
+    expect(hot.temperature[0]).toBeGreaterThan(250)
+    expect(hot.temperature[0]).toBeLessThan(350)
+    expect(500 - hot.temperature[0]).toBeGreaterThan(100 - warm.temperature[0])
   })
 
   it('boils Water through a Metal pan without a Fire-Water pair rule', () => {
@@ -237,8 +242,19 @@ describe('shared thermal physics', () => {
     step(world, 2)
     expect(world.material[ice]).toBe(MaterialId.Ice)
     expect(world.phaseProgress[ice]).toBeGreaterThan(0)
+    expect(world.temperature[ice]).toBe(2)
     step(world, 60)
     expect(world.material[ice]).toBe(MaterialId.Water)
+  })
+
+  it('requires continued energy input to complete a phase transition', () => {
+    const world = createWorld(109, false, 1, 1)
+    const water = place(world, 0, 0, MaterialId.Water, 101)
+    step(world, 120)
+    expect(world.material[water]).toBe(MaterialId.Water)
+    expect(world.temperature[water]).toBe(100)
+    expect(world.phaseProgress[water]).toBeGreaterThan(0)
+    expect(world.phaseProgress[water]).toBeLessThan(MATERIAL_PROPERTIES[MaterialId.Water].phaseTransitions[0].latentHeat)
   })
 })
 

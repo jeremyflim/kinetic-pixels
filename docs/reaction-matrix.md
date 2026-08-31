@@ -8,8 +8,9 @@ possible pair.
 
 Every one of the 120 distinct non-empty material pairs exchanges temperature when adjacent.
 Heat can continue through chains of cells, including empty air, so the effect is not limited to
-the first touching pair and has no maximum range. Empty air cools toward room temperature very
-slowly while the same local solver continues spreading the field.
+the first touching pair and has no maximum range. Empty air cools toward room temperature at a
+rate proportional to its temperature difference while the same local solver continues spreading
+the field.
 
 Additional interactions are selected by properties rather than material names:
 
@@ -39,7 +40,7 @@ intentional; this is not an SI-unit thermodynamics solver.
 | Water | Liquid / fluid | 2 | 48 / 4 | 20 | Above 100 → Steam; below −2 → Ice | — | — |
 | Stone | Solid / immovable | 10 | 96 / 8 | 20 | Above 1,000 → Lava | — | — |
 | Wood | Solid / immovable | 8 | 20 / 3 | 20 | — | 160 | 180 |
-| Fire | Energy / rising | 0.02 | 48 / 1 | 1,000 | — | — | — |
+| Fire | Energy / rising | 0.02 | 48 / 1 | 600 | — | — | — |
 | Smoke | Gas / rising | 0.01 | 10 / 1 | 120 | — | — | — |
 | Oil | Liquid / fluid | 1 | 12 / 3 | 20 | — | 145 | — |
 | Plant | Solid / immovable | 4 | 12 / 2 | 20 | — | 180 | 220 |
@@ -47,14 +48,14 @@ intentional; this is not an SI-unit thermodynamics solver.
 | Metal | Solid / immovable | 12 | 255 / 10 | 20 | — | — | — |
 | Lava | Liquid / fluid | 7 | 96 / 8 | 1,200 | Below 850 → Stone | — | — |
 | Ice | Movable solid / powder | 1.6 | 76 / 5 | −10 | Above 2 → Water | — | — |
-| Spark | Energy / rising | 0.005 | 80 / 1 | 1,600 | — | — | — |
+| Spark | Energy / rising | 0.005 | 80 / 1 | 800 | — | — | — |
 | Gunpowder | Movable solid / powder | 4 | 18 / 2 | 20 | — | 160 | 255 |
 | Glass | Solid / immovable | 9 | 34 / 5 | 20 | — | — | — |
 | Steam | Gas / rising | 0.015 | 14 / 2 | 110 | Below 90 → Water | — | — |
 
-Each transition has a latent-energy requirement. Crossing a threshold starts progress; it does
-not replace the material immediately. Stone melts at a higher threshold than Lava freezes, which
-also prevents rapid Stone/Lava oscillation.
+Each transition has a latent-energy requirement. Excess temperature is consumed into progress
+and the cell remains at its threshold until continued energy transfer completes the conversion.
+Stone melts at a higher threshold than Lava freezes, which also prevents rapid oscillation.
 
 Blast resistance is separate from hardness so brittle Glass can resist corrosion yet shatter.
 Metal is highest at 1.2, followed by Stone at 0.95; Wood is 0.48, most liquids and powders are
@@ -83,8 +84,8 @@ decides whether surrounding cells become hot enough to ignite.
 
 | Material | Fuel | Burn rate per 60 Hz update | Heat per consumed fuel | Smoke chance per update | Special outcome |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Wood | 255 | 3 | 28 | 1.2% | Burns away after about 85 updates if uninterrupted |
-| Oil | 255 | 3 | 18 | 1.2% | Ignites readily and continues flowing while burning |
+| Wood | 255 | 3 | 20 | 1.2% | Burns away after about 85 updates if uninterrupted |
+| Oil | 255 | 3 | 16 | 1.2% | Ignites readily and continues flowing while burning |
 | Plant | 180 | 4 | 10 | 0.8% | Stops growth while burning |
 | Gunpowder | 255 | 255 | 80 | 2% | Converts to Fire and emits a radius-5 heat/pressure explosion |
 
@@ -116,7 +117,7 @@ cell.
 | Movement, combustion, lifetimes, and charge | 60 Hz |
 | Temperature conduction, phase evaluation, and ignition | 30 Hz |
 | Moisture absorption, diffusion, and evaporation | 10 Hz |
-| Ambient air cooling | One staggered cell group relaxes one degree per thermal update |
+| Ambient air cooling | Proportional when far from 20°C; staggered one-degree remainder near ambient |
 
 Temperature uses a reusable integer delta buffer so a conduction pass does not depend on scan
 direction. Material, lifetime/growth/charge, status, temperature, moisture, fuel, liquid mass,

@@ -76,12 +76,12 @@ export function cellColor(world: World, index: number): readonly [number, number
     color = blendColor(color, [255, 109, 74], blend)
   }
   const temperatureOffset = world.temperature[index] - AMBIENT_TEMPERATURE
-  if (temperatureOffset > 4) {
-    const haze = Math.min(0.15, temperatureOffset / (MAXIMUM_TEMPERATURE - AMBIENT_TEMPERATURE) * 0.3)
-    color = blendColor(color, [255, 132, 147], haze)
-  } else if (temperatureOffset < -4) {
-    const haze = Math.min(0.17, -temperatureOffset / (AMBIENT_TEMPERATURE - MINIMUM_TEMPERATURE) * 0.17)
-    color = blendColor(color, [116, 190, 255], haze)
+  if (temperatureOffset > 2) {
+    const haze = Math.min(0.38, 0.035 + Math.sqrt(temperatureOffset / (MAXIMUM_TEMPERATURE - AMBIENT_TEMPERATURE)) * 0.42)
+    color = blendColor(color, [224, 48, 76], haze)
+  } else if (temperatureOffset < -2) {
+    const haze = Math.min(0.36, 0.035 + Math.sqrt(-temperatureOffset / (AMBIENT_TEMPERATURE - MINIMUM_TEMPERATURE)) * 0.34)
+    color = blendColor(color, [47, 122, 232], haze)
   }
   return color
 }

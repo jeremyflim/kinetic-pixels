@@ -35,10 +35,12 @@ describe('192 × 180 simulation tick', () => {
     if (index + 1 < combustion.material.length) {
       combustion.material[index + 1] = MaterialId.Fire
       combustion.state[index + 1] = 60
+      combustion.temperature[index + 1] = MATERIAL_PROPERTIES[MaterialId.Fire].initialTemperature
     }
     if (index + 2 < combustion.material.length) {
       combustion.material[index + 2] = MaterialId.Smoke
       combustion.state[index + 2] = 120
+      combustion.temperature[index + 2] = MATERIAL_PROPERTIES[MaterialId.Smoke].initialTemperature
     }
   }
   bench('burning Wood, Fire, and Smoke', () => stepWorld(combustion))

@@ -86,7 +86,7 @@ test('clearly separates the playable canvas from its dark bezel', async ({ page 
   await expect(page.locator('canvas')).toHaveCSS('background-color', 'rgb(251, 248, 255)')
 })
 
-test('inspection mode reads live stats without painting or starting the field', async ({ page }) => {
+test('inspection mode reads live stats while preserving normal painting', async ({ page }) => {
   const inspect = page.getByRole('button', { name: /See stats/ })
   await inspect.click()
   await expect(inspect).toHaveAttribute('aria-pressed', 'true')
@@ -97,15 +97,41 @@ test('inspection mode reads live stats without painting or starting the field', 
   await expect(panel).toContainText('Air')
   await expect(panel).toContainText('Temperature')
   await canvas.click({ position: { x: 10, y: 10 } })
-  await expect(page.getByText('Click to play')).toBeVisible()
-  expect(await materialCount(page, 1)).toBe(0)
+  await expect(page.getByText('Click to play')).not.toBeVisible()
+  expect(await materialCount(page, 1)).toBeGreaterThan(0)
 })
 
 test('pause control and side indicators use the console signal animations', async ({ page }) => {
+  await expect(page.locator('.status-space b')).toHaveCSS('animation-name', 'paused-indicator-blink')
   await page.keyboard.press('Space')
-  await expect(page.getByRole('button', { name: /Pause/ })).toHaveCSS('animation-name', 'pause-button-blink')
+  await expect(page.getByRole('button', { name: /Pause/ })).toHaveCSS('animation-name', 'none')
   await expect(page.locator('.screw-one')).toHaveCSS('animation-name', 'side-light-left')
   await expect(page.locator('.screw-two')).toHaveCSS('animation-name', 'side-light-right')
+})
+
+test('wheel zoom keeps the pointed cell anchored and the gauge can reset it', async ({ page }) => {
+  const canvas = page.locator('canvas')
+  const slider = page.getByRole('slider', { name: 'Field zoom' })
+  const before = await canvas.boundingBox()
+  if (!before) throw new Error('Canvas did not render')
+  const anchor = { x: before.x + before.width * 0.72, y: before.y + before.height * 0.36 }
+  const logicalBefore = {
+    x: ((anchor.x - before.x) / before.width) * 192,
+    y: ((anchor.y - before.y) / before.height) * 180,
+  }
+  await page.mouse.move(anchor.x, anchor.y)
+  await page.mouse.wheel(0, -100)
+  await expect(slider).toHaveValue('125')
+  const after = await canvas.boundingBox()
+  if (!after) throw new Error('Zoomed canvas did not render')
+  expect(after.width).toBeCloseTo(before.width * 1.25, 0)
+  expect(((anchor.x - after.x) / after.width) * 192).toBeCloseTo(logicalBefore.x, 1)
+  expect(((anchor.y - after.y) / after.height) * 180).toBeCloseTo(logicalBefore.y, 1)
+  await slider.fill('100')
+  await expect(slider).toHaveValue('100')
+  const reset = await canvas.boundingBox()
+  if (!reset) throw new Error('Reset canvas did not render')
+  expect(reset.width).toBeCloseTo(before.width, 0)
 })
 
 test('momentary action buttons visibly press into the console', async ({ page }) => {

@@ -4,3 +4,4 @@ export const MAXIMUM_TEMPERATURE = 2_000
 export const THERMAL_INTERVAL = 2
 export const MOISTURE_INTERVAL = 6
 export const AIR_COOLING_INTERVAL = 8
+export const AIR_COOLING_DIVISOR = 96

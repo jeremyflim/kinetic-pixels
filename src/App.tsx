@@ -21,6 +21,11 @@ const ICONS: Record<string, typeof Sparkles> = {
 }
 
 interface Point { x: number; y: number }
+interface CameraState { zoom: number; offsetX: number; offsetY: number }
+
+const MIN_ZOOM = 1
+const MAX_ZOOM = 4
+const ZOOM_STEP = 0.25
 
 interface PendingStroke {
   from: Point
@@ -50,6 +55,7 @@ function isTextEditable(target: EventTarget | null): boolean {
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const canvasStageRef = useRef<HTMLDivElement>(null)
   const workerRef = useRef<Worker | null>(null)
   const memoryButtonRef = useRef<HTMLButtonElement>(null)
   const pendingSnapshots = useRef(new Map<number, (snapshot: Snapshot) => void>())
@@ -75,6 +81,7 @@ export function App() {
   const [preview, setPreview] = useState<Point | null>(null)
   const [inspectMode, setInspectMode] = useState(false)
   const [inspection, setInspection] = useState<CellInspection | null>(null)
+  const [camera, setCamera] = useState<CameraState>({ zoom: MIN_ZOOM, offsetX: 0, offsetY: 0 })
 
   const setRunning = useCallback((next: boolean) => {
     runningRef.current = next
@@ -178,6 +185,55 @@ export function App() {
     }
   }
 
+  function setZoomAt(nextZoom: number, anchorX: number, anchorY: number) {
+    setCamera((current) => {
+      const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(nextZoom / ZOOM_STEP) * ZOOM_STEP))
+      if (zoom === current.zoom) return current
+      const currentVisibleWidth = GRID_WIDTH / current.zoom
+      const currentVisibleHeight = GRID_HEIGHT / current.zoom
+      const anchoredWorldX = current.offsetX + anchorX * currentVisibleWidth
+      const anchoredWorldY = current.offsetY + anchorY * currentVisibleHeight
+      const nextVisibleWidth = GRID_WIDTH / zoom
+      const nextVisibleHeight = GRID_HEIGHT / zoom
+      return {
+        zoom,
+        offsetX: Math.max(0, Math.min(GRID_WIDTH - nextVisibleWidth, anchoredWorldX - anchorX * nextVisibleWidth)),
+        offsetY: Math.max(0, Math.min(GRID_HEIGHT - nextVisibleHeight, anchoredWorldY - anchorY * nextVisibleHeight)),
+      }
+    })
+  }
+
+  function onViewportWheel(event: WheelEvent) {
+    if (event.target instanceof Element && event.target.closest('.zoom-gauge')) return
+    event.preventDefault()
+    const bounds = canvasStageRef.current?.getBoundingClientRect()
+    if (!bounds) return
+    const anchorX = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width))
+    const anchorY = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height))
+    setCamera((current) => {
+      const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, current.zoom + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)))
+      if (zoom === current.zoom) return current
+      const currentVisibleWidth = GRID_WIDTH / current.zoom
+      const currentVisibleHeight = GRID_HEIGHT / current.zoom
+      const anchoredWorldX = current.offsetX + anchorX * currentVisibleWidth
+      const anchoredWorldY = current.offsetY + anchorY * currentVisibleHeight
+      const nextVisibleWidth = GRID_WIDTH / zoom
+      const nextVisibleHeight = GRID_HEIGHT / zoom
+      return {
+        zoom,
+        offsetX: Math.max(0, Math.min(GRID_WIDTH - nextVisibleWidth, anchoredWorldX - anchorX * nextVisibleWidth)),
+        offsetY: Math.max(0, Math.min(GRID_HEIGHT - nextVisibleHeight, anchoredWorldY - anchorY * nextVisibleHeight)),
+      }
+    })
+  }
+
+  useEffect(() => {
+    const stage = canvasStageRef.current
+    if (!stage) return
+    stage.addEventListener('wheel', onViewportWheel, { passive: false })
+    return () => stage.removeEventListener('wheel', onViewportWheel)
+  })
+
   function postStroke(stroke: PendingStroke) {
     workerRef.current?.postMessage({
       type: 'stroke',
@@ -248,11 +304,7 @@ export function App() {
   function onPointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     if (event.button !== 0 || !ready) return
     const point = pointFromClient(event.clientX, event.clientY, event.currentTarget)
-    if (inspectMode) {
-      setPreview(point)
-      queueInspection(point)
-      return
-    }
+    if (inspectMode) queueInspection(point)
     event.currentTarget.setPointerCapture(event.pointerId)
     pointerDown.current = true
     previousPoint.current = point
@@ -357,22 +409,29 @@ export function App() {
             <span className="status-space" aria-live="polite">{running ? '' : <b>● Paused</b>}</span>
           </div>
           <div className="canvas-well">
-            <div className="canvas-stage">
-              <canvas
-                ref={canvasRef}
-                className={inspectMode ? 'inspecting' : ''}
-                width={GRID_WIDTH}
-                height={GRID_HEIGHT}
-                aria-label={`Interactive ${GRID_WIDTH} by ${GRID_HEIGHT} cell pixel physics field. Click, hold, or drag to paint the selected material.`}
-                data-ready={ready}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={endPointer}
-                onPointerCancel={endPointer}
-                onPointerLeave={() => { setPreview(null); setInspection(null); if (!pointerDown.current) endPointer() }}
-              />
-              {startup && <div className="startup-hint"><CirclePlay aria-hidden="true" /><span>Click to play</span></div>}
-              {preview && !inspectMode && (
+            <div ref={canvasStageRef} className="canvas-stage">
+              <div
+                className="canvas-camera"
+                style={{
+                  left: `${-(camera.offsetX * camera.zoom / GRID_WIDTH) * 100}%`,
+                  top: `${-(camera.offsetY * camera.zoom / GRID_HEIGHT) * 100}%`,
+                  transform: `scale(${camera.zoom})`,
+                }}
+              >
+                <canvas
+                  ref={canvasRef}
+                  className={inspectMode ? 'inspecting' : ''}
+                  width={GRID_WIDTH}
+                  height={GRID_HEIGHT}
+                  aria-label={`Interactive ${GRID_WIDTH} by ${GRID_HEIGHT} cell pixel physics field. Click, hold, or drag to paint the selected material.`}
+                  data-ready={ready}
+                  onPointerDown={onPointerDown}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={endPointer}
+                  onPointerCancel={endPointer}
+                  onPointerLeave={() => { setPreview(null); setInspection(null); if (!pointerDown.current) endPointer() }}
+                />
+              {preview && (
                 <div
                   className="brush-preview"
                   aria-hidden="true"
@@ -395,6 +454,23 @@ export function App() {
                   }}
                 />
               )}
+              </div>
+              {startup && <div className="startup-hint"><CirclePlay aria-hidden="true" /><span>Click to play</span></div>}
+              <label className="zoom-gauge">
+                <span>Zoom</span>
+                <b>+</b>
+                <input
+                  aria-label="Field zoom"
+                  type="range"
+                  min={MIN_ZOOM * 100}
+                  max={MAX_ZOOM * 100}
+                  step={ZOOM_STEP * 100}
+                  value={camera.zoom * 100}
+                  onChange={(event) => setZoomAt(Number(event.target.value) / 100, 0.5, 0.5)}
+                />
+                <b>−</b>
+                <output>{Math.round(camera.zoom * 100)}%</output>
+              </label>
               {inspectMode && (
                 <aside className="inspection-panel" aria-live="polite" aria-label="Pixel inspection">
                   <header><span>Pixel probe</span><b>{inspection ? `${inspection.x}, ${inspection.y}` : 'Hover field'}</b></header>
