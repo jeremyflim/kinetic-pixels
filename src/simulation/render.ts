@@ -1,5 +1,5 @@
 import { MATERIALS, MATERIAL_PROPERTIES, MaterialId, type MaterialIdValue, StatusFlag } from './materials'
-import { MAXIMUM_TEMPERATURE, MINIMUM_TEMPERATURE } from './constants'
+import { AMBIENT_TEMPERATURE, MAXIMUM_TEMPERATURE, MINIMUM_TEMPERATURE } from './constants'
 import type { World } from './types'
 
 const RGB = MATERIALS.map((material) => material.colors.map((color) => {
@@ -75,12 +75,12 @@ export function cellColor(world: World, index: number): readonly [number, number
     const blend = Math.min(0.46, ((world.temperature[index] - 100) / 900) * 0.46)
     color = blendColor(color, [255, 109, 74], blend)
   }
-  const temperatureOffset = world.temperature[index] - world.ambientTemperature
+  const temperatureOffset = world.temperature[index] - AMBIENT_TEMPERATURE
   if (temperatureOffset > 2) {
-    const haze = Math.min(0.38, 0.035 + Math.sqrt(temperatureOffset / (MAXIMUM_TEMPERATURE - world.ambientTemperature)) * 0.42)
+    const haze = Math.min(0.38, 0.035 + Math.sqrt(temperatureOffset / (MAXIMUM_TEMPERATURE - AMBIENT_TEMPERATURE)) * 0.42)
     color = blendColor(color, [224, 48, 76], haze)
   } else if (temperatureOffset < -2) {
-    const haze = Math.min(0.36, 0.035 + Math.sqrt(-temperatureOffset / (world.ambientTemperature - MINIMUM_TEMPERATURE)) * 0.34)
+    const haze = Math.min(0.36, 0.035 + Math.sqrt(-temperatureOffset / (AMBIENT_TEMPERATURE - MINIMUM_TEMPERATURE)) * 0.34)
     color = blendColor(color, [47, 122, 232], haze)
   }
   return color

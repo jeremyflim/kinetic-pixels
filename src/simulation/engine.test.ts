@@ -475,6 +475,9 @@ describe('moisture and combustion', () => {
     expect(hot).not.toEqual(ambient)
     expect(cold).not.toEqual(ambient)
     expect(hot).not.toEqual(cold)
+    world.temperature[0] = AMBIENT_TEMPERATURE
+    world.ambientTemperature = 500
+    expect(cellColor(world, 0)).toEqual(ambient)
   })
 })
 
