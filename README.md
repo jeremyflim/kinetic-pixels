@@ -1,16 +1,47 @@
-# Try it here!
-
-[Live Site](https://jeremyflim.github.io/kinetic-pixels/)
-
 # Kinetic Pixels
 
-Kinetic Pixels is a desktop-first, browser-only pixel-physics sandbox presented as a
-pink-and-lavender molded-plastic console. Its 192 × 180 deterministic world starts with a
-two-line wooden title that is made from ordinary Wood cells: pour Sand over it, redirect
-Water through it, erase it, or set it on fire.
+**[Play the live build →](https://jeremyflim.github.io/kinetic-pixels/)**
 
-The application has no server, accounts, analytics, or automatic saving. It provides three
-explicit local save slots and portable, validated JSON files.
+Kinetic Pixels is a deterministic, browser-only pixel-physics sandbox presented as a
+pink-and-lavender molded-plastic console. Its 192 × 180 world starts with a wooden title made
+from ordinary simulation cells: pour Sand over it, redirect Water through it, inspect its
+temperature, erase it, or set it on fire.
+
+![Kinetic Pixels console](tests/e2e/visual.spec.ts-snapshots/console-1366x768-chromium-win32.png)
+
+The project combines a React interface with a framework-independent TypeScript simulation core,
+a dedicated Web Worker, `OffscreenCanvas` rendering, versioned local saves, deterministic
+randomness, and automated browser deployment. It has no server, accounts, analytics, or
+automatic saving.
+
+## Engineering highlights
+
+- **Responsive simulation loop:** the canonical world, fixed-step physics, and rendering run in
+  a dedicated module worker, keeping high-frequency grid updates out of React.
+- **Compact deterministic state:** parallel typed arrays store material identity, temperature,
+  moisture, fuel, liquid mass, phase progress, status, and update bookkeeping. A serialized
+  xorshift PRNG makes equal seeds and commands reproducible.
+- **Data-driven materials:** stable numeric IDs point to one physical-properties table covering
+  movement, density, heat capacity, conductivity, phase transitions, combustion, moisture,
+  corrosion, and blast resistance.
+- **Grounded physics with explicit game tuning:** heat exchange conserves energy and respects
+  relative material properties, while documented calibration factors keep boiling, ignition,
+  and other interactions playable.
+- **Portable persistence:** three local slots and validated JSON exports use a versioned format;
+  save versions 2–4 migrate into the current version 5 model.
+- **Automated quality gates:** Vitest, Playwright, visual regression snapshots, TypeScript, and a
+  production build run in GitHub Actions before the same artifact is published to GitHub Pages.
+
+## Technology
+
+| Area | Implementation |
+| --- | --- |
+| Interface | React, TypeScript, CSS, Radix Dialog, Lucide icons |
+| Build | Vite |
+| Simulation | Framework-independent TypeScript, seeded PRNG, typed arrays |
+| Concurrency and rendering | Module Web Worker, `OffscreenCanvas`, pixel-scaled `ImageData` |
+| Testing | Vitest, Playwright, checked-in Chromium visual baselines |
+| Delivery | GitHub Actions and GitHub Pages |
 
 ## Run locally
 
@@ -21,88 +52,91 @@ npm ci
 npm run dev
 ```
 
-Vite serves the app at `/kinetic-pixels/` so local and GitHub Pages asset paths behave the
-same way.
+Vite serves the application at `/kinetic-pixels/` so local and GitHub Pages asset paths behave
+the same way.
 
 ## Controls
 
-- Choose Sand, Water, Stone, Wood, Fire, Oil, Plant, Acid, Metal, Lava, Ice,
-  Spark, or Gunpowder from the Elements rail. Glass, Smoke, and Steam are created by phase changes and combustion.
-- Click, hold, or drag on the field to paint; a held pointer continually reapplies the brush.
-  The first ordinary field click starts the simulation and paints.
-- `Space` toggles Play/Pause.
-- `E` toggles Eraser and restores the previously selected material when toggled off.
-- `I` toggles See Stats. While active, hovering a cell—including air—shows its live state and
-  physical properties while normal painting remains available. The reading refreshes while the
-  pointer is stationary.
-- Monitor first arms a persistent probe. Its next field click pins one cell without painting or
-  starting the simulation. While armed, another console control or `Escape` cancels selection;
-  once pinned, every control and the normal brush remain available and only Monitor removes it.
-- Time rate advances the same fixed simulation steps at `½×`, `1×`, or `2×` wall-clock speed.
-- Scroll over the field to zoom toward the pointed cell. The full-height vertical bar in the
-  field's left bezel also controls zoom from 100–400% and can return the view to 100%.
-- `-`, `=`, and `+` change the circular brush radius from 1–20 cells.
-- Clear empties the world without restoring the title or changing the current tool, radius,
-  or play state.
+- Choose Sand, Water, Stone, Wood, Fire, Oil, Plant, Acid, Metal, Lava, Ice, Spark, or Gunpowder
+  from the Elements rail. Glass, Smoke, and Steam emerge from phase changes and combustion.
+- Click, hold, or drag on the field to paint. A held pointer continually reapplies the brush, and
+  the first ordinary field click starts the simulation.
+- Use `Space` to Play/Pause and `E` to toggle the Eraser.
+- Use `-`, `=`, or `+` to adjust the circular brush radius from 1–20 cells.
+- Use `I` or See Stats to inspect live physical properties while preserving normal painting.
+- Click Monitor, then select one cell without painting. Once pinned, the probe stays on that
+  coordinate while every normal tool remains available; click Monitor again to remove it.
+- Select `½×`, `1×`, or `2×` to change how quickly fixed simulation steps accrue in wall time.
+- Scroll over the field to zoom toward the pointed cell, or use the full-height vertical control
+  in the left bezel to select 100–400% zoom.
+- Clear empties the world without changing the selected tool, radius, or play state.
 - Memory Card pauses the simulation and opens three local slots plus JSON import/export.
-- `Escape` closes the Memory Card Manager. Other global shortcuts are disabled while it is open.
 
 The simulation remains editable while paused. Reloading the browser is intentionally the only
 way to recreate the original wooden title.
 
 ## Architecture
 
-React owns controls, dialog state, and low-frequency status only. A dedicated module worker
-owns the canonical typed-array world and the transferred `OffscreenCanvas`. Physics uses fixed
-60 Hz simulation steps while the selected time rate controls how quickly they accrue in wall time.
-Catch-up work is capped after throttling, and paused worlds perform no recurring physics work.
+React owns controls, dialog state, and low-frequency inspection output. It does not own or mirror
+the live grid. A dedicated module worker owns the canonical world and transferred
+`OffscreenCanvas`; the UI sends compact commands for strokes, play state, time rate, inspection,
+clearing, snapshots, and world replacement.
 
-The simulation core under `src/simulation/` is independent of React, workers, and rendering.
-Material definitions use stable numeric IDs backed by one exported physical-properties table.
-Each entry declares movement, density, thermal conductivity and capacity, phase transitions,
-combustion, moisture, blast resistance, conductivity, and corrosion properties.
+Physics uses fixed 60 Hz simulation steps. Movement and combustion update at 60 Hz, temperature
+and phase behavior at 30 Hz, and moisture plus active heat emission at 10 Hz. The selected time
+rate changes how quickly those unchanged steps accrue, so a given seed and tick count remain
+deterministic. Catch-up work is capped after browser throttling, and paused worlds perform no
+recurring physics.
 
-Temperature persists in every cell, including empty air. Each material declares rounded mass
-density, specific heat, and thermal conductivity values for a named representative form. The
-shared solver derives volumetric heat capacity from density × specific heat, transfers conserved
-energy across cardinal edges, and drives latent phase transitions and ignition. Air exchanges
-energy aggressively with an implicit room-temperature environment, preventing long-lived hot-air
-bridges from boiling materials before contact.
-A second shared solver absorbs and diffuses moisture through porous materials,
-spends finite Water mass, and consumes heat while drying. Combustion consumes fuel and feeds
-heat back into the same thermal field. Fire and burning fuels actively emit local energy, so fire
-spread emerges from temperature rather than Wood-to-Wood or Fire-to-Wood pair rules. Water keeps
-its high relative thermal mass while its latent boiling duration is deliberately gameplay-scaled.
+The simulation core under `src/simulation/` has no React, DOM, worker, or canvas dependencies.
+Material behavior is split between shared property-driven systems and a sparse pair registry:
 
-The sparse pair registry is reserved for identity-specific chemistry: currently Acid corrosion
-and dilution. Parallel typed-array channels keep material identity, lifetime/growth/charge,
-temporary statuses, temperature, moisture, fuel, liquid mass, phase progress, and per-tick
-update markers separate. A seeded xorshift PRNG is the only source of simulation randomness.
+- Cardinal neighbors exchange equal-and-opposite thermal energy using capacity and harmonic
+  conductivity, with fractional energy carried between integer-temperature updates.
+- Empty air conducts locally but also exchanges energy with an implicit 20°C environment.
+- Phase thresholds accumulate latent progress rather than converting immediately.
+- Porous materials absorb and diffuse finite Water mass; evaporation consumes heat.
+- Combustible cells ignite from temperature and dryness, consume fuel, and feed energy back into
+  the shared thermal field.
+- Identity-specific pair rules are reserved for Acid corrosion and dilution.
 
-Further invariants and the worker contract are recorded in [docs/architecture.md](docs/architecture.md).
-The complete current element-by-element behavior map is recorded in
-[docs/reaction-matrix.md](docs/reaction-matrix.md).
+Water retains its high relative heat capacity, while its latent boiling duration is deliberately
+gameplay-scaled. Steam has no arbitrary deletion timer: warm vapor persists, cooled vapor
+condenses into Water, and its higher-contrast palette remains visible against the field.
 
-## Saves and portable files
+### Repository map
 
-Local slots use exactly these versioned keys:
+| Path | Responsibility |
+| --- | --- |
+| `src/App.tsx` | Console controls, pointer flow, Monitor state, worker messaging |
+| `src/simulation/engine.ts` | World lifecycle, fixed update ordering, paint commands, snapshots |
+| `src/simulation/materials.ts` | Material registry, movement, combustion, reactions, transient state |
+| `src/simulation/physics.ts` | Thermal conduction, phases, ignition, moisture transfer |
+| `src/simulation/worker.ts` | Fixed-step scheduler, rendering, compact command protocol |
+| `src/simulation/render.ts` | Deterministic per-cell color and thermal visualization |
+| `src/simulation/serialization.ts` | Save validation, migration, and Base64 typed-array encoding |
+| `tests/e2e/` | Browser acceptance tests and viewport-specific visual baselines |
 
-- `kinetic-pixels:save:a`
-- `kinetic-pixels:save:b`
-- `kinetic-pixels:save:c`
+Detailed invariants and the worker contract are in
+[docs/architecture.md](docs/architecture.md). The complete implemented material behavior map is
+in [docs/reaction-matrix.md](docs/reaction-matrix.md).
 
-A save records the material, state, status, temperature, moisture, fuel, liquid-mass, and
-phase-progress grids, tick, initial seed, current PRNG state, format metadata, name, and timestamp.
-It does not record the selected tool, radius, dialog state, play state, startup hint, or pointer preview.
+## Testing and development workflow (TDD)
 
-JSON files use format `kinetic-pixels`, version `5`, fixed 192 × 180 dimensions, and Base64
-typed-array bytes. Versions 2–4 remain loadable; versions 2 and 3 migrate legacy burning, Wet, and
-0–255 heat state into the new fuel, moisture, and Celsius-like temperature channels.
-Imports are size-limited and fully validated before replacing the live world; bad JSON, unknown
-materials, unsupported versions, invalid dimensions, and decoded-length mismatches leave the
-current world untouched.
+The project uses a practical test-driven development (TDD), behavior-first workflow: expected
+behavior is encoded at the simulation and browser boundaries, and regressions are added to the
+suite alongside their fixes. Deterministic seeds make simulation tests repeatable, while
+Playwright verifies the user-visible contract rather than internal React state.
 
-## Quality checks
+The current suite contains:
+
+- **39 Vitest tests** covering material behavior, heat and phase transitions, moisture,
+  combustion, explosions, deterministic ordering, clearing, save migration, and serialization.
+- **26 Playwright tests** covering pointer and keyboard flows, Monitor states, time rate, paused
+  editing, long strokes, saves, import/export validation, focus behavior, responsive geometry,
+  and visual regression snapshots at 1024 × 576, 1366 × 768, and 1920 × 1080.
+
+Run the same checks used by CI:
 
 ```bash
 npm run typecheck
@@ -112,16 +146,27 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Vitest covers the title mask, each material behavior, deterministic update ordering, clearing,
-and serialization. Playwright covers startup, pointer and keyboard behavior, paused editing,
-interpolated strokes, Monitor states, time rate, saves, overwrite confirmation, import/export validation, focus behavior,
-and screenshots at 1024 × 576, 1366 × 768, and 1920 × 1080.
+The Windows CI runner is intentional because the checked-in pixel baselines use the same
+system-font rendering as the targeted desktop Chromium environment.
 
-GitHub Actions runs the full suite on every push and pull request. The Windows runner is
-intentional because the checked-in pixel baselines use the same system-font rendering as the
-targeted desktop Chromium environment.
+## Saves and portable files
 
-## Benchmark
+Local slots use these versioned keys:
+
+- `kinetic-pixels:save:a`
+- `kinetic-pixels:save:b`
+- `kinetic-pixels:save:c`
+
+A save records the material, state, status, temperature, moisture, fuel, liquid-mass, and
+phase-progress grids, plus the tick, initial seed, current PRNG state, format metadata, name, and
+timestamp. Interface preferences and play state are intentionally not persisted.
+
+JSON files use format `kinetic-pixels`, version `5`, and fixed 192 × 180 dimensions. Imports are
+size-limited and fully validated before mutation. Invalid JSON, unknown materials, unsupported
+versions, dimension mismatches, or decoded-length errors leave the active world untouched.
+Versions 2–4 remain loadable; older heat, wetness, burning, and 16-bit phase data are migrated.
+
+## Performance
 
 Run the reproducible benchmark with:
 
@@ -139,19 +184,21 @@ Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1
 | Fully occupied Lava / thermal field | 9.15 ms | 109.32 ticks/s |
 | Burning Wood / Fire / Smoke | 14.55 ms | 68.72 ticks/s |
 
-These figures are descriptive rather than CI thresholds because shared runners have noisy timing.
+These figures are descriptive rather than CI thresholds because shared machines and background
+load introduce timing noise. `2×` is a target rate; extremely dense combustion scenes may not
+sustain the full 120 simulation steps per wall-clock second.
 
 ## Deployment
 
-The production build uses Vite base path `/kinetic-pixels/`. On accepted changes to `main`, the
-Pages workflow repeats type-checking, unit tests, production build, and Chromium Playwright tests,
-then publishes `dist/` with the official GitHub Pages actions.
+Every push and pull request runs type-checking, unit tests, a production build, and Chromium
+Playwright tests. Pushes to `main` repeat those gates, upload the exact `dist/` artifact, and
+deploy it with the official GitHub Pages actions.
 
-## Compatibility
+## Scope and compatibility
 
 The project targets current desktop Chromium with `OffscreenCanvas` in a dedicated worker.
-Mobile, broad cross-browser fallbacks, audio, WebGPU/WASM acceleration, and automatic saving are
-intentionally deferred.
+Mobile layouts, broad cross-browser fallbacks, audio, WebGPU/WASM acceleration, and automatic
+saving are intentionally outside the current scope.
 
 ## License
 
