@@ -21,6 +21,7 @@ Additional interactions are selected by properties rather than material names:
 | Any two porous materials | Moisture diffuses from higher to lower saturation, even when their identities differ |
 | Hot moist material | Moisture evaporates, consumes heat, and can emit Steam |
 | Combustible material + sufficient temperature and dryness | Ignition; fuel then produces heat and limited Smoke |
+| Fire or an actively burning fuel + nearby cells | Fixed emitted energy; each target's heat capacity determines its temperature rise |
 | Material crossing one of its phase thresholds | Latent progress accumulates before conversion |
 | Spark + conductive material | The existing Charged status is applied; electricity propagation is intentionally unchanged |
 
@@ -43,20 +44,23 @@ which controls movement, remains separate from physical mass density.
 | Wood | Dry medium-density wood | 500 | 1,300 | 0.12 | 65 | 20 | Ignites at 160 |
 | Fire | Effective burning cell | 100 | 1,200 | 0.08 | 12 | 600 | — |
 | Smoke | Hot gas/aerosol | 1.2 | 1,100 | 0.04 | 1 | 120 | — |
-| Oil | Liquid n-octane | 700 | 2,220 | 0.13 | 155 | 20 | Ignites at 145 |
+| Oil | Liquid n-octane | 700 | 2,220 | 0.13 | 155 | 20 | Ignites at 110 |
 | Plant | Fresh water-rich biomass | 700 | 3,500 | 0.2 | 245 | 20 | Ignites at 180 |
 | Acid | 20% HCl solution | 1,100 | 3,600 | 0.5 | 396 | 20 | Above 108 → Steam |
 | Metal | Mild steel | 7,850 | 470 | 54 | 369 | 20 | — |
 | Lava | Molten basalt | 2,700 | 1,000 | 1.5 | 270 | 1,200 | Below 1,000 → Stone |
 | Ice | Water ice | 917 | 2,100 | 2.2 | 193 | −10 | Above 0 → Water |
 | Spark | Electrical pulse | 0.1 | 1,000 | 0.005 | 1 | 800 | — |
-| Gunpowder | Packed black powder | 1,000 | 1,000 | 0.1 | 100 | 20 | Ignites at 160 |
+| Gunpowder | Packed black powder | 1,000 | 1,000 | 0.1 | 100 | 20 | Ignites at 140 |
 | Glass | Soda-lime glass | 2,500 | 840 | 1 | 210 | 20 | — |
 | Steam | Water vapor | 0.6 | 2,000 | 0.025 | 1 | 110 | Below 95 → Water |
 
 Each transition has a latent-energy requirement. Excess temperature is consumed into progress
 and the cell remains at its threshold until continued energy transfer completes the conversion.
-Stone melts at a higher threshold than Lava freezes, which also prevents rapid oscillation.
+Water vaporization uses 18% of the reference latent requirement as a gameplay time scale while
+retaining Water's full sensible heat capacity. Steam uses vapor-cell mass for condensation and has
+no lifetime deletion, so cooled vapor becomes Water instead of disappearing. Stone melts at a
+higher threshold than Lava freezes, which also prevents rapid oscillation.
 
 Blast resistance is separate from hardness so brittle Glass can resist corrosion yet shatter.
 Metal is highest at 1.2, followed by Stone at 0.95; Wood is 0.48, most liquids and powders are
@@ -80,15 +84,17 @@ material variant or a Gunpowder-only flag.
 ## Combustion
 
 Wood, Oil, Plant, and Gunpowder share the same ignition evaluator. Ordinary burning consumes the
-cell's fuel, adds energy to its own temperature, and may emit Smoke. The thermal solver then
-decides whether surrounding cells become hot enough to ignite.
+cell's fuel, adds energy to its own temperature, emits local heat, and may emit Smoke. Fire also
+maintains an active hot core during its finite lifetime. The thermal solver then decides whether
+surrounding cells become hot enough to ignite.
 
-| Material | Fuel | Burn rate per 60 Hz update | Heat per consumed fuel | Smoke chance per update | Special outcome |
-| --- | ---: | ---: | ---: | ---: | --- |
-| Wood | 255 | 3 | 600 | 1.2% | Burns away after about 85 updates if uninterrupted |
-| Oil | 255 | 3 | 600 | 1.2% | Ignites readily and continues flowing while burning |
-| Plant | 180 | 4 | 600 | 0.8% | Stops growth while burning |
-| Gunpowder | 255 | 255 | 1,500 | 2% | Converts to Fire and emits a radius-5 heat/pressure explosion |
+| Material | Fuel | Burn rate per 60 Hz update | Heat per consumed fuel | Neighbor heat | Smoke chance | Special outcome |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Fire | — | — | — | 320 | — | Maintains at least 500°C while its lifetime remains |
+| Wood | 255 | 3 | 600 | 70 | 1.2% | Burns away after about 85 updates if uninterrupted |
+| Oil | 255 | 3 | 600 | 90 | 1.2% | Ignites readily and continues flowing while burning |
+| Plant | 180 | 4 | 600 | 60 | 0.8% | Stops growth while burning |
+| Gunpowder | 255 | 255 | 1,500 | — | 2% | Converts to Fire and emits a radius-5 heat/pressure explosion |
 
 There is no Fire + Wood ignition rule and no Wood + Wood spread rule. Fire is a hot rising cell;
 Wood ignites only if conduction raises its temperature enough while it is dry. Gunpowder uses
@@ -118,7 +124,11 @@ cell.
 | Movement, combustion, lifetimes, and charge | 60 Hz |
 | Temperature conduction, phase evaluation, and ignition | 30 Hz |
 | Moisture absorption, diffusion, and evaporation | 10 Hz |
+| Active Fire and burning-fuel heat emission | 10 Hz batches, preserving the listed per-tick average |
 | Ambient air cooling | 8% of air-to-room energy difference per thermal pass |
+
+The Time rate control changes only how quickly fixed steps accrue in real time: `½×`, `1×`, and
+`2×`. It does not enlarge a step or alter seeded update order, so a given tick count remains deterministic.
 
 Temperature uses a reusable energy-delta buffer so a conduction pass does not depend on scan
 direction. Equal and opposite pair transfers conserve energy, including a fractional remainder

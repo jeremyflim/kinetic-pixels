@@ -2,7 +2,7 @@
 
 Kinetic Pixels is a browser-only React application. React owns controls, dialog state, and
 low-frequency status. A dedicated module worker owns the canonical 192 × 180 world, advances
-it at a fixed 60 Hz, and renders through a transferred `OffscreenCanvas`. The pure simulation
+it in fixed 60 Hz steps at a selectable wall-clock rate, and renders through a transferred `OffscreenCanvas`. The pure simulation
 core has no React, DOM, worker, or canvas dependencies.
 
 ## Invariants
@@ -52,7 +52,9 @@ Phase transitions are material properties with directional thresholds and latent
 Crossing a threshold moves excess energy into phase progress and pins the cell at the threshold;
 conversion completes only after continued heating or cooling supplies the full requirement.
 Water/Ice/Steam and Stone/Lava therefore change through energy transfer instead of contact-pair
-outcomes. Moisture absorption and diffusion use capacity and permeability properties; finite
+outcomes. Water retains its real relative capacity while vaporization latent energy is scaled to
+18% for playable boil times. Steam has no arbitrary lifetime and uses vapor-volume mass for its
+cooling-side latent requirement, so it persists until it condenses. Moisture absorption and diffusion use capacity and permeability properties; finite
 Water mass is spent as porous cells become wet. Evaporation consumes temperature.
 
 Material identity answers what a cell is. `state` stores lifetime, growth, or the existing charge
@@ -61,7 +63,8 @@ remaining fuel, liquid mass, and latent phase progress. The legacy `Wet` flag ex
 save migration and is derived from moisture during simulation.
 
 Combustion begins from temperature and dryness, consumes fuel, and returns heat to the shared
-field. Fire-to-Wood, Wood-to-Wood, Water-to-Fire, and Lava-to-Water pair outcomes are not present.
+field. Fire and burning fuels also inject fixed local energy into neighboring cells; target heat
+capacity therefore still determines the resulting temperature rise. Fire-to-Wood, Wood-to-Wood, Water-to-Fire, and Lava-to-Water pair outcomes are not present.
 The sparse registry currently contains only Acid corrosion and dilution. Plant growth remains a
 biological material behavior.
 
@@ -71,17 +74,20 @@ matter is destroyed. Other explosive cells receive ignition energy instead of be
 chains use the same data model rather than a Gunpowder-to-Gunpowder pair reaction.
 
 Movement and combustion update at 60 Hz, temperature and phase behavior at 30 Hz, and moisture
-at 10 Hz. Version 5 saves serialize 32-bit latent progress along with the other canonical arrays.
+and active heat emission at 10 Hz of simulation time. Emitted energy is batched without changing
+its per-second total. The worker accrues those unchanged fixed steps at `½×`, `1×`, or `2×`
+wall-clock rate. Version 5 saves serialize 32-bit latent progress along with the other canonical arrays.
 Versions 2–4 remain accepted; legacy burning, Wet, heat, and 16-bit phase values migrate before
 replacement. Fractional thermal remainder is transient solver state and resets at a save boundary.
 
 ## Worker protocol
 
-The UI sends compact commands for initialization, play state, strokes, clearing, snapshots,
-single-cell inspection, and world replacement. See Stats and Monitor poll one selected cell at
+The UI sends compact commands for initialization, play state, time rate, strokes, clearing,
+snapshots, single-cell inspection, and world replacement. See Stats and Monitor poll one selected cell at
 12.5 Hz; the worker returns only that small record and never mirrors the live grid into React.
 Pointer coordinates are converted to logical cells before commands are posted, and stroke
-endpoints are interpolated in the simulation core.
+endpoints are interpolated in the simulation core. Monitor selection consumes one non-painting
+field gesture; after pinning, the normal tool flow resumes without moving the sampled coordinate.
 
 ## Rendering
 

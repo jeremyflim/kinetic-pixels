@@ -29,14 +29,16 @@ same way.
 - Choose Sand, Water, Stone, Wood, Fire, Oil, Plant, Acid, Metal, Lava, Ice,
   Spark, or Gunpowder from the Elements rail. Glass, Smoke, and Steam are created by phase changes and combustion.
 - Click, hold, or drag on the field to paint; a held pointer continually reapplies the brush.
-  The first field click starts the simulation and paints.
+  The first ordinary field click starts the simulation and paints.
 - `Space` toggles Play/Pause.
 - `E` toggles Eraser and restores the previously selected material when toggled off.
 - `I` toggles See Stats. While active, hovering a cell—including air—shows its live state and
   physical properties while normal painting remains available. The reading refreshes while the
   pointer is stationary.
-- Monitor arms a persistent probe. Click or re-click the field to pin a cell; `Escape`, Monitor
-  again, or any other console control cancels it. Painting remains available while monitoring.
+- Monitor first arms a persistent probe. Its next field click pins one cell without painting or
+  starting the simulation. While armed, another console control or `Escape` cancels selection;
+  once pinned, every control and the normal brush remain available and only Monitor removes it.
+- Time rate advances the same fixed simulation steps at `½×`, `1×`, or `2×` wall-clock speed.
 - Scroll over the field to zoom toward the pointed cell. The full-height vertical bar in the
   field's left bezel also controls zoom from 100–400% and can return the view to 100%.
 - `-`, `=`, and `+` change the circular brush radius from 1–20 cells.
@@ -51,9 +53,9 @@ way to recreate the original wooden title.
 ## Architecture
 
 React owns controls, dialog state, and low-frequency status only. A dedicated module worker
-owns the canonical typed-array world and the transferred `OffscreenCanvas`. It advances physics
-at a fixed 60 Hz, caps catch-up work after throttling, and performs no recurring physics work
-while paused.
+owns the canonical typed-array world and the transferred `OffscreenCanvas`. Physics uses fixed
+60 Hz simulation steps while the selected time rate controls how quickly they accrue in wall time.
+Catch-up work is capped after throttling, and paused worlds perform no recurring physics work.
 
 The simulation core under `src/simulation/` is independent of React, workers, and rendering.
 Material definitions use stable numeric IDs backed by one exported physical-properties table.
@@ -68,8 +70,9 @@ energy aggressively with an implicit room-temperature environment, preventing lo
 bridges from boiling materials before contact.
 A second shared solver absorbs and diffuses moisture through porous materials,
 spends finite Water mass, and consumes heat while drying. Combustion consumes fuel and feeds
-heat back into the same thermal field, so fire spread emerges from temperature rather than
-Wood-to-Wood or Fire-to-Wood pair rules.
+heat back into the same thermal field. Fire and burning fuels actively emit local energy, so fire
+spread emerges from temperature rather than Wood-to-Wood or Fire-to-Wood pair rules. Water keeps
+its high relative thermal mass while its latent boiling duration is deliberately gameplay-scaled.
 
 The sparse pair registry is reserved for identity-specific chemistry: currently Acid corrosion
 and dilution. Parallel typed-array channels keep material identity, lifetime/growth/charge,
@@ -111,7 +114,7 @@ npm run test:e2e
 
 Vitest covers the title mask, each material behavior, deterministic update ordering, clearing,
 and serialization. Playwright covers startup, pointer and keyboard behavior, paused editing,
-interpolated strokes, saves, overwrite confirmation, import/export validation, focus behavior,
+interpolated strokes, Monitor states, time rate, saves, overwrite confirmation, import/export validation, focus behavior,
 and screenshots at 1024 × 576, 1366 × 768, and 1920 × 1080.
 
 GitHub Actions runs the full suite on every push and pull request. The Windows runner is
@@ -130,11 +133,11 @@ Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1
 
 | 192 × 180 scenario | Mean tick | Throughput |
 | --- | ---: | ---: |
-| Fully occupied stationary grid | 3.62 ms | 276.60 ticks/s |
-| Falling Sand | 7.47 ms | 133.81 ticks/s |
-| Water spread | 6.17 ms | 161.95 ticks/s |
-| Fully occupied Lava / thermal field | 8.63 ms | 115.90 ticks/s |
-| Burning Wood / Fire / Smoke | 12.38 ms | 80.79 ticks/s |
+| Fully occupied stationary grid | 3.74 ms | 267.38 ticks/s |
+| Falling Sand | 7.62 ms | 131.24 ticks/s |
+| Water spread | 6.34 ms | 157.77 ticks/s |
+| Fully occupied Lava / thermal field | 9.15 ms | 109.32 ticks/s |
+| Burning Wood / Fire / Smoke | 14.55 ms | 68.72 ticks/s |
 
 These figures are descriptive rather than CI thresholds because shared runners have noisy timing.
 

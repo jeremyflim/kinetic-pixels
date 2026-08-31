@@ -1,4 +1,4 @@
-import { AMBIENT_TEMPERATURE, MAXIMUM_TEMPERATURE, MINIMUM_TEMPERATURE, THERMAL_ENERGY_UNIT_J_M3 } from './constants'
+import { AMBIENT_TEMPERATURE, HEAT_EMISSION_INTERVAL, MAXIMUM_TEMPERATURE, MINIMUM_TEMPERATURE, THERMAL_ENERGY_UNIT_J_M3, WATER_BOILING_LATENT_SCALE } from './constants'
 import { chance, randomInt } from './random'
 import type { MaterialDefinition, MaterialProperties, UpdateContext, World } from './types'
 
@@ -16,8 +16,6 @@ export const FIRE_LIFETIME_MIN = 38
 export const FIRE_LIFETIME_MAX = 72
 export const SMOKE_LIFETIME_MIN = 90
 export const SMOKE_LIFETIME_MAX = 180
-export const STEAM_LIFETIME_MIN = 180
-export const STEAM_LIFETIME_MAX = 360
 
 function thermal(massDensity: number, specificHeatCapacity: number, thermalConductivity: number) {
   return {
@@ -28,15 +26,15 @@ function thermal(massDensity: number, specificHeatCapacity: number, thermalCondu
   }
 }
 
-function latent(massDensity: number, latentHeatKJkg: number): number {
-  return Math.round(massDensity * latentHeatKJkg * 1_000 / THERMAL_ENERGY_UNIT_J_M3)
+function latent(massDensity: number, latentHeatKJkg: number, gameplayScale = 1): number {
+  return Math.round(massDensity * latentHeatKJkg * 1_000 / THERMAL_ENERGY_UNIT_J_M3 * gameplayScale)
 }
 
 const inertProperties = {
   hardness: 0, conductivity: false, corrosiveness: 0,
   initialTemperature: AMBIENT_TEMPERATURE, ...thermal(1.2, 1_005, 0.026), blastResistance: 0,
   phaseTransitions: [], ignitionTemperature: null, fuel: 0, burnRate: 0,
-  combustionHeat: 0, smokeYield: 0, explosionRadius: 0, explosionHeat: 0, explosionPressure: 0,
+  combustionHeat: 0, heatEmission: 0, smokeYield: 0, explosionRadius: 0, explosionHeat: 0, explosionPressure: 0,
   moistureCapacity: 0, moistureAbsorption: 0, moistureDiffusivity: 0,
 } as const
 
@@ -52,7 +50,7 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
     ...inertProperties, phase: 'liquid', mobility: 'fluid', density: 2, friction: 0.04, conductivity: true,
     ...thermal(998, 4_180, 0.6), blastResistance: 0.12,
     phaseTransitions: [
-      { direction: 'above', temperature: 100, product: MaterialId.Steam, latentHeat: latent(998, 2_257) },
+      { direction: 'above', temperature: 100, product: MaterialId.Steam, latentHeat: latent(998, 2_257, WATER_BOILING_LATENT_SCALE) },
       { direction: 'below', temperature: 0, product: MaterialId.Ice, latentHeat: latent(998, 334) },
     ],
   },
@@ -64,13 +62,13 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
   [MaterialId.Wood]: {
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 8, hardness: 0.45, friction: 0.8,
     ...thermal(500, 1_300, 0.12), blastResistance: 0.48,
-    ignitionTemperature: 160, fuel: 255, burnRate: 3, combustionHeat: 600, smokeYield: 0.012,
+    ignitionTemperature: 160, fuel: 255, burnRate: 3, combustionHeat: 600, heatEmission: 70, smokeYield: 0.012,
     moistureCapacity: 180, moistureAbsorption: 32, moistureDiffusivity: 24,
   },
   [MaterialId.Fire]: {
     ...inertProperties, phase: 'energy', mobility: 'rising', density: 0.02, friction: 0.05,
     // Fire is an effective burning cell (fuel + hot gas), not a parcel of room-density air.
-    initialTemperature: 600, ...thermal(100, 1_200, 0.08), blastResistance: 0,
+    initialTemperature: 600, ...thermal(100, 1_200, 0.08), blastResistance: 0, heatEmission: 320,
   },
   [MaterialId.Smoke]: {
     ...inertProperties, phase: 'gas', mobility: 'rising', density: 0.01, friction: 0.12,
@@ -79,12 +77,12 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
   [MaterialId.Oil]: {
     ...inertProperties, phase: 'liquid', mobility: 'fluid', density: 1, friction: 0.025,
     ...thermal(700, 2_220, 0.13), blastResistance: 0.08,
-    ignitionTemperature: 145, fuel: 255, burnRate: 3, combustionHeat: 600, smokeYield: 0.012,
+    ignitionTemperature: 110, fuel: 255, burnRate: 3, combustionHeat: 600, heatEmission: 90, smokeYield: 0.012,
   },
   [MaterialId.Plant]: {
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 4, hardness: 0.1, friction: 0.75,
     ...thermal(700, 3_500, 0.2), blastResistance: 0.16,
-    ignitionTemperature: 180, fuel: 180, burnRate: 4, combustionHeat: 600, smokeYield: 0.008,
+    ignitionTemperature: 180, fuel: 180, burnRate: 4, combustionHeat: 600, heatEmission: 60, smokeYield: 0.008,
     moistureCapacity: 220, moistureAbsorption: 30, moistureDiffusivity: 28,
   },
   [MaterialId.Acid]: {
@@ -113,7 +111,7 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
   [MaterialId.Gunpowder]: {
     ...inertProperties, phase: 'solid', mobility: 'powder', density: 4, hardness: 0.15, friction: 0.62,
     ...thermal(1_000, 1_000, 0.1), blastResistance: 0.05,
-    ignitionTemperature: 160, fuel: 255, burnRate: 255, combustionHeat: 1_500, smokeYield: 0.02,
+    ignitionTemperature: 140, fuel: 255, burnRate: 255, combustionHeat: 1_500, smokeYield: 0.02,
     explosionRadius: 5, explosionHeat: 1_600, explosionPressure: 1.35,
     moistureCapacity: 255, moistureAbsorption: 28, moistureDiffusivity: 72,
   },
@@ -124,7 +122,8 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
   [MaterialId.Steam]: {
     ...inertProperties, phase: 'gas', mobility: 'rising', density: 0.015, friction: 0.035,
     initialTemperature: 110, ...thermal(0.6, 2_000, 0.025), blastResistance: 0,
-    phaseTransitions: [{ direction: 'below', temperature: 95, product: MaterialId.Water, latentHeat: latent(998, 2_257) }],
+    // A vapor cell represents vapor-volume mass; using liquid density here prevented condensation.
+    phaseTransitions: [{ direction: 'below', temperature: 95, product: MaterialId.Water, latentHeat: latent(0.6, 2_257) }],
   },
 }
 
@@ -310,6 +309,15 @@ function emitSmoke(world: World, x: number, y: number): void {
   }
 }
 
+function emitHeat(world: World, x: number, y: number, energyPerCell: number): void {
+  if (energyPerCell <= 0 || world.tick % HEAT_EMISSION_INTERVAL !== 0) return
+  const emittedEnergy = energyPerCell * HEAT_EMISSION_INTERVAL
+  if (x > 0) world.thermalRemainder[at(world, x - 1, y)] += emittedEnergy
+  if (x + 1 < world.width) world.thermalRemainder[at(world, x + 1, y)] += emittedEnergy
+  if (y > 0) world.thermalRemainder[at(world, x, y - 1)] += emittedEnergy
+  if (y + 1 < world.height) world.thermalRemainder[at(world, x, y + 1)] += emittedEnergy
+}
+
 export function applyExplosion(world: World, originIndex: number, x: number, y: number, source: MaterialProperties): void {
   const originTemperature = Math.max(world.temperature[originIndex], source.explosionHeat)
   setMaterialCell(world, originIndex, MaterialId.Fire, originTemperature)
@@ -352,6 +360,7 @@ function updateCombustion(world: World, index: number, x: number, y: number, mat
   world.fuel[index] -= consumed
   const generatedTemperature = Math.round(properties.combustionHeat * consumed / properties.heatCapacity)
   world.temperature[index] = Math.min(MAXIMUM_TEMPERATURE, world.temperature[index] + generatedTemperature)
+  emitHeat(world, x, y, properties.heatEmission)
   if (chance(world, properties.smokeYield)) emitSmoke(world, x, y)
   if (world.fuel[index] === 0) { emptyCell(world, index); return true }
   return false
@@ -490,6 +499,8 @@ function updateFire(world: World, { index, x, y }: UpdateContext): void {
   const lifetime = world.state[index] || randomInt(world, FIRE_LIFETIME_MIN, FIRE_LIFETIME_MAX)
   if (lifetime <= 1) return emptyCell(world, index)
   world.state[index] = lifetime - 1
+  world.temperature[index] = Math.max(world.temperature[index], 500)
+  emitHeat(world, x, y, MATERIAL_PROPERTIES[MaterialId.Fire].heatEmission)
   for (const [targetX, targetY] of driftingVerticalAttempts(world, x, y, -1, driftChance(MaterialId.Fire))) {
     if (!inBounds(world, targetX, targetY)) continue
     const target = at(world, targetX, targetY)
@@ -513,9 +524,6 @@ function updateSmoke(world: World, { index, x, y }: UpdateContext): void {
 }
 
 function updateSteam(world: World, { index, x, y }: UpdateContext): void {
-  const lifetime = world.state[index] || randomInt(world, STEAM_LIFETIME_MIN, STEAM_LIFETIME_MAX)
-  if (lifetime <= 1) return emptyCell(world, index)
-  world.state[index] = lifetime - 1
   for (const [targetX, targetY] of driftingVerticalAttempts(world, x, y, -1, driftChance(MaterialId.Steam))) {
     if (!inBounds(world, targetX, targetY)) continue
     const target = at(world, targetX, targetY)
@@ -561,7 +569,7 @@ export const MATERIALS = [
   { id: MaterialId.Spark, key: 'spark', label: 'Spark', paintable: true, properties: MATERIAL_PROPERTIES[MaterialId.Spark], colors: ['#fff176', '#ffffff', '#ffca3a'], update: updateSpark },
   { id: MaterialId.Gunpowder, key: 'gunpowder', label: 'Gunpowder', paintable: true, properties: MATERIAL_PROPERTIES[MaterialId.Gunpowder], colors: ['#35303b', '#514958', '#211e29'], update: updateGunpowder },
   { id: MaterialId.Glass, key: 'glass', label: 'Glass', paintable: false, properties: MATERIAL_PROPERTIES[MaterialId.Glass], colors: ['#bceaf0', '#e5fbff', '#8fcfd8'], update: updateStatic },
-  { id: MaterialId.Steam, key: 'steam', label: 'Steam', paintable: false, properties: MATERIAL_PROPERTIES[MaterialId.Steam], colors: ['#d8d6e3', '#f2eff8', '#bbb8ca'], update: updateSteam },
+  { id: MaterialId.Steam, key: 'steam', label: 'Steam', paintable: false, properties: MATERIAL_PROPERTIES[MaterialId.Steam], colors: ['#a9aec4', '#c7cada', '#858ca8'], update: updateSteam },
 ] as const satisfies readonly MaterialDefinition[]
 
 export const MATERIAL_BY_ID = new Map<number, MaterialDefinition>(MATERIALS.map((material) => [material.id, material]))
@@ -579,6 +587,5 @@ export function initializeTransientState(world: World, index: number, materialId
   world.liquidMass[index] = properties?.phase === 'liquid' ? 255 : 0
   if (materialId === MaterialId.Fire) world.state[index] = randomInt(world, FIRE_LIFETIME_MIN, FIRE_LIFETIME_MAX)
   else if (materialId === MaterialId.Smoke) world.state[index] = randomInt(world, SMOKE_LIFETIME_MIN, SMOKE_LIFETIME_MAX)
-  else if (materialId === MaterialId.Steam) world.state[index] = randomInt(world, STEAM_LIFETIME_MIN, STEAM_LIFETIME_MAX)
   else if (materialId === MaterialId.Spark) world.state[index] = randomInt(world, 3, 6)
 }

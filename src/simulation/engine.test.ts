@@ -58,6 +58,7 @@ describe('material model', () => {
       expect(properties.thermalConductivity).toBeGreaterThanOrEqual(0)
       expect(properties.heatCapacity).toBeGreaterThan(0)
       expect(properties.heatCapacity).toBe(Math.max(1, Math.round(properties.massDensity * properties.specificHeatCapacity / THERMAL_ENERGY_UNIT_J_M3)))
+      expect(properties.heatEmission).toBeGreaterThanOrEqual(0)
       expect(properties.moistureCapacity).toBeGreaterThanOrEqual(0)
     }
     expect(MATERIAL_REACTIONS.length).toBe(4)
@@ -192,7 +193,7 @@ describe('shared thermal physics', () => {
     place(world, 4, 2, MaterialId.Metal)
     const fireCell = index(world, 3, 4)
     let producedSteam = false
-    for (let tick = 0; tick < 1_800 && !producedSteam; tick += 1) {
+    for (let tick = 0; tick < 600 && !producedSteam; tick += 1) {
       if (world.material[fireCell] !== MaterialId.Fire) {
         place(world, 3, 4, MaterialId.Fire)
         world.state[fireCell] = FIRE_LIFETIME_MIN
@@ -201,6 +202,30 @@ describe('shared thermal physics', () => {
       producedSteam = world.material.includes(MaterialId.Steam)
     }
     expect(producedSteam).toBe(true)
+  })
+
+  it('keeps warm Steam present and condenses cooled Steam into Water', () => {
+    const warm = createWorld(113, false, 1, 1)
+    place(warm, 0, 0, MaterialId.Steam, 110)
+    step(warm, 600)
+    expect(warm.material[0]).toBe(MaterialId.Steam)
+
+    const cooled = createWorld(114, false, 3, 3)
+    for (let y = 0; y < cooled.height; y += 1) {
+      for (let x = 0; x < cooled.width; x += 1) place(cooled, x, y, MaterialId.Stone, 20)
+    }
+    const steam = place(cooled, 1, 1, MaterialId.Steam, 80)
+    for (let tick = 0; tick < 180 && cooled.material[steam] === MaterialId.Steam; tick += 1) stepWorld(cooled)
+    expect(cooled.material[steam]).toBe(MaterialId.Water)
+  })
+
+  it('renders Steam with clear contrast against the empty field', () => {
+    const world = createWorld(115, false, 1, 1)
+    const empty = cellColor(world, 0)
+    place(world, 0, 0, MaterialId.Steam, 95)
+    const steam = cellColor(world, 0)
+    const channelDistance = steam.reduce((total, channel, index) => total + Math.abs(channel - empty[index]), 0)
+    expect(channelDistance).toBeGreaterThan(90)
   })
 
   it('does not boil Water across an air gap before physical contact', () => {
@@ -356,6 +381,21 @@ describe('moisture and combustion', () => {
     }
     step(world, 2)
     expect(world.status.some((status) => Boolean(status & StatusFlag.Burning))).toBe(true)
+  })
+
+  it('lets one minimum-lived Fire ignite dry Oil and Gunpowder through active heat', () => {
+    for (const materialId of [MaterialId.Oil, MaterialId.Gunpowder] as const) {
+      const world = createWorld(206 + materialId, false, 3, 3)
+      for (let y = 0; y < world.height; y += 1) {
+        for (let x = 0; x < world.width; x += 1) place(world, x, y, MaterialId.Stone)
+      }
+      place(world, 1, 0, materialId)
+      const fire = place(world, 1, 1, MaterialId.Fire)
+      world.state[fire] = FIRE_LIFETIME_MIN
+      step(world, FIRE_LIFETIME_MIN + 2)
+      if (materialId === MaterialId.Oil) expect(world.status.some((status, index) => world.material[index] === MaterialId.Oil && Boolean(status & StatusFlag.Burning))).toBe(true)
+      else expect(world.material.includes(MaterialId.Fire)).toBe(true)
+    }
   })
 
   it('applies generalized explosion heat, pressure destruction, resistance, and explosive chaining', () => {

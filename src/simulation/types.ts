@@ -60,6 +60,7 @@ export interface MaterialProperties {
   fuel: number
   burnRate: number
   combustionHeat: number
+  heatEmission: number
   smokeYield: number
   explosionRadius: number
   explosionHeat: number

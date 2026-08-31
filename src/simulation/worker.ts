@@ -12,6 +12,7 @@ type WorkerCommand =
   | { type: 'snapshot'; requestId: number }
   | { type: 'inspect'; requestId: number; x: number; y: number }
   | { type: 'replace'; snapshot: Snapshot }
+  | { type: 'rate'; rate: number }
 
 let world: World | undefined
 let context: OffscreenCanvasRenderingContext2D | null = null
@@ -19,6 +20,7 @@ let imageData: ImageData | undefined
 let running = false
 let lastTime = 0
 let accumulator = 0
+let timeRate = 1
 const FIXED_STEP_MS = 1000 / 60
 const MAX_CATCH_UP_STEPS = 5
 
@@ -34,7 +36,7 @@ function scheduleFrame(callback: (time: number) => void): void {
 function frame(time: number): void {
   if (!running || !world) return
   if (lastTime === 0) lastTime = time
-  accumulator = Math.min(accumulator + (time - lastTime), FIXED_STEP_MS * MAX_CATCH_UP_STEPS)
+  accumulator = Math.min(accumulator + (time - lastTime) * timeRate, FIXED_STEP_MS * MAX_CATCH_UP_STEPS)
   lastTime = time
   let steps = 0
   while (accumulator >= FIXED_STEP_MS && steps < MAX_CATCH_UP_STEPS) {
@@ -70,6 +72,11 @@ self.onmessage = (event: MessageEvent<WorkerCommand>) => {
   }
   if (!world) return
   if (command.type === 'running') setRunning(command.running)
+  if (command.type === 'rate' && (command.rate === 0.5 || command.rate === 1 || command.rate === 2)) {
+    timeRate = command.rate
+    lastTime = 0
+    accumulator = 0
+  }
   if (command.type === 'stroke') {
     paintStroke(world, command.fromX, command.fromY, command.toX, command.toY, command.radius, command.materialId, command.erase)
     if (!running) draw()

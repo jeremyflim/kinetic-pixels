@@ -26,6 +26,8 @@ interface CameraState { zoom: number; offsetX: number; offsetY: number }
 const MIN_ZOOM = 1
 const MAX_ZOOM = 4
 const ZOOM_STEP = 0.25
+const SIMULATION_RATES = [0.5, 1, 2] as const
+type SimulationRate = (typeof SIMULATION_RATES)[number]
 
 interface PendingStroke {
   from: Point
@@ -83,6 +85,7 @@ export function App() {
   const [monitoredPoint, setMonitoredPoint] = useState<Point | null>(null)
   const [inspection, setInspection] = useState<CellInspection | null>(null)
   const [camera, setCamera] = useState<CameraState>({ zoom: MIN_ZOOM, offsetX: 0, offsetY: 0 })
+  const [simulationRate, setSimulationRate] = useState<SimulationRate>(1)
 
   const requestInspection = useCallback((point: Point) => {
     if (inspectionPending.current) return
@@ -159,13 +162,14 @@ export function App() {
   }, [selectedMaterial])
 
   const toggleInspect = useCallback(() => {
+    if (monitorMode && monitoredPoint) return
     setMonitorMode(false)
     setMonitoredPoint(null)
     setInspectMode((active) => {
       if (active) setInspection(null)
       return !active
     })
-  }, [])
+  }, [monitorMode, monitoredPoint])
 
   const cancelMonitor = useCallback(() => {
     setMonitorMode(false)
@@ -195,7 +199,7 @@ export function App() {
   }, [inspectMode, monitorMode, monitoredPoint, preview, requestInspection])
 
   useEffect(() => {
-    if (!monitorMode) return
+    if (!monitorMode || monitoredPoint) return
     function cancelForOutsideControl(event: PointerEvent) {
       if (!(event.target instanceof Element)) return
       if (event.target.closest('.canvas-stage') || event.target.closest('.monitor-button')) return
@@ -203,14 +207,14 @@ export function App() {
     }
     document.addEventListener('pointerdown', cancelForOutsideControl)
     return () => document.removeEventListener('pointerdown', cancelForOutsideControl)
-  }, [cancelMonitor, monitorMode])
+  }, [cancelMonitor, monitorMode, monitoredPoint])
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.ctrlKey || event.altKey || event.metaKey) return
       if (memoryOpen) return
       if (isTextEditable(event.target)) return
-      if (event.key === 'Escape' && monitorMode) {
+      if (event.key === 'Escape' && monitorMode && !monitoredPoint) {
         event.preventDefault()
         cancelMonitor()
         return
@@ -231,7 +235,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [cancelMonitor, memoryOpen, monitorMode, toggleEraser, toggleInspect, toggleRunning])
+  }, [cancelMonitor, memoryOpen, monitorMode, monitoredPoint, toggleEraser, toggleInspect, toggleRunning])
 
   function pointFromClient(clientX: number, clientY: number, canvas: HTMLCanvasElement): Point {
     const bounds = canvas.getBoundingClientRect()
@@ -346,11 +350,15 @@ export function App() {
   function onPointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     if (event.button !== 0 || !ready) return
     const point = pointFromClient(event.clientX, event.clientY, event.currentTarget)
-    if (monitorMode) {
+    if (monitorMode && !monitoredPoint) {
       const pinned = { x: Math.floor(point.x), y: Math.floor(point.y) }
       setMonitoredPoint(pinned)
       requestInspection(pinned)
-    } else if (inspectMode) requestInspection(point)
+      setPreview(point)
+      event.preventDefault()
+      return
+    }
+    if (inspectMode) requestInspection(point)
     event.currentTarget.setPointerCapture(event.pointerId)
     pointerDown.current = true
     previousPoint.current = point
@@ -419,6 +427,7 @@ export function App() {
         inspection.status & StatusFlag.Charged ? 'Charged' : '',
       ].filter(Boolean).join(', ') || 'Stable'
     : ''
+  const monitorArmed = monitorMode && !monitoredPoint
   const reticlePoint = monitorMode ? monitoredPoint : inspectMode ? preview : null
 
   return (
@@ -479,7 +488,7 @@ export function App() {
               >
                 <canvas
                   ref={canvasRef}
-                  className={inspectMode || monitorMode ? 'inspecting' : ''}
+                  className={`${inspectMode || monitorMode ? 'inspecting' : ''} ${monitorArmed ? 'monitor-armed' : ''}`.trim()}
                   width={GRID_WIDTH}
                   height={GRID_HEIGHT}
                   aria-label={`Interactive ${GRID_WIDTH} by ${GRID_HEIGHT} cell pixel physics field. Click, hold, or drag to paint the selected material.`}
@@ -490,7 +499,7 @@ export function App() {
                   onPointerCancel={endPointer}
                   onPointerLeave={() => { setPreview(null); if (inspectMode) setInspection(null); if (!pointerDown.current) endPointer() }}
                 />
-              {preview && (
+              {preview && !monitorArmed && (
                 <div
                   className="brush-preview"
                   aria-hidden="true"
@@ -555,6 +564,25 @@ export function App() {
             <div className="tool-readout"><span>Current tool</span><strong>{toolLabel}</strong></div>
             <label className="brush-label" htmlFor="brush-radius"><span>Brush radius</span><output>{radius} cells</output></label>
             <input id="brush-radius" className="brush-slider" type="range" min="1" max="20" value={radius} onChange={(event) => setRadius(Number(event.target.value))} />
+            <div className="rate-control" role="group" aria-label="Simulation speed">
+              <span>Time rate</span>
+              <div>
+                {SIMULATION_RATES.map((rate) => (
+                  <button
+                    key={rate}
+                    type="button"
+                    className={simulationRate === rate ? 'active' : ''}
+                    aria-pressed={simulationRate === rate}
+                    onClick={() => {
+                      setSimulationRate(rate)
+                      workerRef.current?.postMessage({ type: 'rate', rate })
+                    }}
+                  >
+                    {rate === 0.5 ? '½×' : `${rate}×`}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="utility-grid">
               <button className={`console-button ${eraser ? 'active' : ''}`} aria-pressed={eraser} onClick={toggleEraser}><Eraser aria-hidden="true" /><span>Eraser</span><kbd>E</kbd></button>
               <button className="console-button destructive" onClick={clear}><Trash2 aria-hidden="true" /><span>Clear</span></button>
