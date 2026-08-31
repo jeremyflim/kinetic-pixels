@@ -1,6 +1,7 @@
 import { Activity, Bomb, CirclePlay, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, ScanSearch, Snowflake, Sparkles, Trash2, Trees, Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MemoryCardDialog } from './MemoryCardDialog'
+import { AMBIENT_TEMPERATURE, MAXIMUM_ROOM_TEMPERATURE, MINIMUM_ROOM_TEMPERATURE } from './simulation/constants'
 import { MATERIAL_BY_ID, MaterialId, PAINTABLE_MATERIALS, StatusFlag } from './simulation/materials'
 import { GRID_HEIGHT, GRID_WIDTH, type CellInspection, type Snapshot } from './simulation/types'
 
@@ -86,6 +87,7 @@ export function App() {
   const [inspection, setInspection] = useState<CellInspection | null>(null)
   const [camera, setCamera] = useState<CameraState>({ zoom: MIN_ZOOM, offsetX: 0, offsetY: 0 })
   const [simulationRate, setSimulationRate] = useState<SimulationRate>(1)
+  const [ambientTemperature, setAmbientTemperature] = useState(AMBIENT_TEMPERATURE)
 
   const requestInspection = useCallback((point: Point) => {
     if (inspectionPending.current) return
@@ -564,6 +566,21 @@ export function App() {
             <div className="tool-readout"><span>Current tool</span><strong>{toolLabel}</strong></div>
             <label className="brush-label" htmlFor="brush-radius"><span>Brush radius</span><output>{radius} cells</output></label>
             <input id="brush-radius" className="brush-slider" type="range" min="1" max="20" value={radius} onChange={(event) => setRadius(Number(event.target.value))} />
+            <label className="temperature-label" htmlFor="room-temperature"><span>Room temperature</span><output>{ambientTemperature} °C</output></label>
+            <input
+              id="room-temperature"
+              className="temperature-slider"
+              type="range"
+              min={MINIMUM_ROOM_TEMPERATURE}
+              max={MAXIMUM_ROOM_TEMPERATURE}
+              step="5"
+              value={ambientTemperature}
+              onChange={(event) => {
+                const temperature = Number(event.target.value)
+                setAmbientTemperature(temperature)
+                workerRef.current?.postMessage({ type: 'ambient', temperature })
+              }}
+            />
             <div className="rate-control" role="group" aria-label="Simulation speed">
               <span>Time rate</span>
               <div>

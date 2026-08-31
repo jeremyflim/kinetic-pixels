@@ -332,8 +332,9 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
   font-weight: 900;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  animation: startup-signal-blink 1.35s steps(1, end) infinite;
 }
-.startup-hint svg { width: 1.2em; height: 1.2em; color: var(--mint); }
+.startup-hint svg { width: 1.2em; height: 1.2em; color: currentColor; }
 
 .brush-preview {
   position: absolute;
@@ -418,7 +419,7 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
   border-bottom: 0.1cqw solid rgb(118 87 155 / 0.42);
   text-transform: uppercase;
 }
-.tool-readout span, .brush-label span { font-size: clamp(6px, 0.72cqw, 11px); font-weight: 800; letter-spacing: 0.11em; }
+.tool-readout span, .brush-label span, .temperature-label span { font-size: clamp(6px, 0.72cqw, 11px); font-weight: 800; letter-spacing: 0.11em; }
 .tool-readout strong { color: var(--hot-pink); font-family: 'Arial Black', Arial, sans-serif; font-size: clamp(8px, 1.2cqw, 18px); }
 
 .brush-label { display: flex; justify-content: space-between; margin-top: 1cqw; text-transform: uppercase; }
@@ -436,6 +437,21 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 }
 .brush-slider::-webkit-slider-runnable-track { height: 0.35cqw; min-height: 3px; background: var(--deep-chrome); }
 .brush-slider::-webkit-slider-thumb { appearance: none; width: 1.25cqw; min-width: 10px; height: 1.25cqw; min-height: 10px; margin-top: calc((0.35cqw - max(10px, 1.25cqw)) / 2); background: var(--hot-pink); border: var(--line) solid var(--ink); box-shadow: inset 0.12cqw 0.12cqw white; }
+
+.temperature-label { display: flex; justify-content: space-between; text-transform: uppercase; }
+.temperature-label output { color: var(--deep-chrome); font-size: clamp(7px, 0.76cqw, 12px); font-weight: 900; }
+.temperature-slider {
+  width: 100%;
+  height: 1.85cqw;
+  margin: 0.55cqw 0 1cqw;
+  padding: 0 0.45cqw;
+  appearance: none;
+  background: var(--paper);
+  border: var(--line) solid var(--chrome-purple);
+  box-shadow: inset 0.13cqw 0.2cqw 0.3cqw rgb(83 61 108 / 0.42);
+}
+.temperature-slider::-webkit-slider-runnable-track { height: 0.35cqw; min-height: 3px; background: linear-gradient(90deg, #2f7ae8 0%, #f5f1ff 35%, #ffbe4f 62%, var(--hot-pink) 100%); }
+.temperature-slider::-webkit-slider-thumb { appearance: none; width: 1.25cqw; min-width: 10px; height: 1.25cqw; min-height: 10px; margin-top: calc((0.35cqw - max(10px, 1.25cqw)) / 2); background: white; border: var(--line) solid var(--ink); box-shadow: inset 0.12cqw 0.12cqw var(--amber), 0.1cqw 0.1cqw 0 var(--hot-pink); }
 
 .rate-control {
   display: flex;
@@ -619,6 +635,30 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 @keyframes paused-indicator-blink {
   0%, 48% { color: var(--amber); opacity: 1; }
   49%, 100% { color: var(--hot-pink); opacity: 0.28; }
+}
+
+@keyframes startup-signal-blink {
+  0%, 43% {
+    color: var(--mint);
+    background: rgb(53 45 66 / 0.94);
+    border-color: white;
+    box-shadow: 0.25cqw 0.25cqw 0 var(--hot-pink), inset 0.12cqw 0.12cqw 0 rgb(255 255 255 / 0.14);
+    filter: brightness(1.12);
+  }
+  44%, 62% {
+    color: var(--ink);
+    background: var(--mint);
+    border-color: var(--ink);
+    box-shadow: 0.12cqw 0.12cqw 0 var(--amber), inset 0.12cqw 0.12cqw 0 white;
+    filter: none;
+  }
+  63%, 100% {
+    color: white;
+    background: rgb(53 45 66 / 0.9);
+    border-color: var(--amber);
+    box-shadow: 0.25cqw 0.25cqw 0 var(--hot-pink);
+    filter: none;
+  }
 }
 @keyframes side-light-left {
   0%, 48% { background: var(--hot-pink); box-shadow: 0 0 0.38cqw rgb(255 71 132 / 0.78), inset 0.1cqw 0.1cqw rgb(255 255 255 / 0.58); }

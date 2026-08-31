@@ -582,7 +582,10 @@ export function initializeTransientState(world: World, index: number, materialId
   world.phaseProgress[index] = 0
   world.thermalRemainder[index] = 0
   const properties = MATERIAL_PROPERTIES[materialId as MaterialIdValue]
-  world.temperature[index] = properties?.initialTemperature ?? AMBIENT_TEMPERATURE
+  const initialTemperature = properties?.initialTemperature ?? AMBIENT_TEMPERATURE
+  world.temperature[index] = initialTemperature === AMBIENT_TEMPERATURE
+    ? world.ambientTemperature
+    : initialTemperature
   world.fuel[index] = properties?.fuel ?? 0
   world.liquidMass[index] = properties?.phase === 'liquid' ? 255 : 0
   if (materialId === MaterialId.Fire) world.state[index] = randomInt(world, FIRE_LIFETIME_MIN, FIRE_LIFETIME_MAX)

@@ -63,6 +63,9 @@ the same way.
   the first ordinary field click starts the simulation.
 - Use `Space` to Play/Pause and `E` to toggle the Eraser.
 - Use `-`, `=`, or `+` to adjust the circular brush radius from 1–20 cells.
+- Set Room temperature from −50–150°C to change the environmental baseline. Empty air moves
+  toward that target, and ordinary newly painted materials begin at it; authored sources such as
+  Fire, Lava, Ice, Steam, and Spark keep their characteristic starting temperatures.
 - Use `I` or See Stats to inspect live physical properties while preserving normal painting.
 - Click Monitor, then select one cell without painting. Once pinned, the probe stays on that
   coordinate while every normal tool remains available; click Monitor again to remove it.
@@ -79,8 +82,8 @@ way to recreate the original wooden title.
 
 React owns controls, dialog state, and low-frequency inspection output. It does not own or mirror
 the live grid. A dedicated module worker owns the canonical world and transferred
-`OffscreenCanvas`; the UI sends compact commands for strokes, play state, time rate, inspection,
-clearing, snapshots, and world replacement.
+`OffscreenCanvas`; the UI sends compact commands for strokes, play state, room temperature, time
+rate, inspection, clearing, snapshots, and world replacement.
 
 Physics uses fixed 60 Hz simulation steps. Movement and combustion update at 60 Hz, temperature
 and phase behavior at 30 Hz, and moisture plus active heat emission at 10 Hz. The selected time
@@ -93,7 +96,8 @@ Material behavior is split between shared property-driven systems and a sparse p
 
 - Cardinal neighbors exchange equal-and-opposite thermal energy using capacity and harmonic
   conductivity, with fractional energy carried between integer-temperature updates.
-- Empty air conducts locally but also exchanges energy with an implicit 20°C environment.
+- Empty air conducts locally but also exchanges energy with the adjustable room-temperature
+  environment (20°C by default).
 - Phase thresholds accumulate latent progress rather than converting immediately.
 - Porous materials absorb and diffuse finite Water mass; evaporation consumes heat.
 - Combustible cells ignite from temperature and dryness, consume fuel, and feed energy back into

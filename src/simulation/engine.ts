@@ -26,11 +26,12 @@ export function createWorld(seed = 0x4b504958, withTitle = true, width = GRID_WI
     temperatureDelta: new Int32Array(width * height),
     thermalRemainder: new Int32Array(width * height),
     moistureDelta: new Int16Array(width * height),
+    ambientTemperature: AMBIENT_TEMPERATURE,
     tick: 0,
     seed: normalizedSeed,
     randomState: normalizedSeed,
   }
-  world.temperature.fill(AMBIENT_TEMPERATURE)
+  world.temperature.fill(world.ambientTemperature)
   if (withTitle) rasterizeTitle(world)
   return world
 }
@@ -66,7 +67,7 @@ export function clearWorld(world: World): void {
   world.material.fill(0)
   world.state.fill(0)
   world.status.fill(0)
-  world.temperature.fill(AMBIENT_TEMPERATURE)
+  world.temperature.fill(world.ambientTemperature)
   world.moisture.fill(0)
   world.fuel.fill(0)
   world.liquidMass.fill(0)
@@ -95,7 +96,7 @@ export function paintCircle(world: World, centerX: number, centerY: number, radi
         world.material[index] = MaterialId.Empty
         world.state[index] = 0
         world.status[index] = 0
-        world.temperature[index] = AMBIENT_TEMPERATURE
+        world.temperature[index] = world.ambientTemperature
         world.moisture[index] = 0
         world.fuel[index] = 0
         world.liquidMass[index] = 0

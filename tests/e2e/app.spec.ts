@@ -46,7 +46,9 @@ test('starts with the wooden title, Sand, paused state, and instruction', async 
   await expect(sandButton).toHaveCSS('color', 'rgb(48, 41, 61)')
   await expect(sandButton.locator('svg')).toHaveCSS('color', 'rgb(48, 41, 61)')
   await expect(page.getByText('Paused')).toBeVisible()
-  await expect(page.getByText('Click to play')).toBeVisible()
+  const startupHint = page.locator('.startup-hint')
+  await expect(startupHint).toBeVisible()
+  await expect(startupHint).toHaveCSS('animation-name', 'startup-signal-blink')
   expect(await materialCount(page, 4)).toBe(TITLE_WOOD_CELLS)
 })
 
@@ -308,6 +310,20 @@ test('radius shortcuts clamp and adjust the control', async ({ page }) => {
   await expect(slider).toHaveValue('5')
   await page.keyboard.press('+')
   await expect(slider).toHaveValue('6')
+})
+
+test('room temperature control sets the environmental baseline', async ({ page }) => {
+  const slider = page.getByLabel('Room temperature')
+  await expect(slider).toHaveValue('20')
+  await slider.fill('80')
+  await expect(slider).toHaveValue('80')
+  await expect(page.locator('.temperature-label output')).toHaveText('80 °C')
+
+  await page.getByRole('button', { name: /Clear/ }).click()
+  await page.getByRole('button', { name: /See stats/ }).click()
+  await page.locator('canvas').hover({ position: { x: 20, y: 20 } })
+  const temperature = page.getByLabel('Pixel inspection').locator('dt', { hasText: 'Temperature' }).locator('xpath=following-sibling::dd[1]')
+  await expect(temperature).toHaveText('80 °C')
 })
 
 test('Clear empties the world and reload restores the title', async ({ page }) => {

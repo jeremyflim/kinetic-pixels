@@ -1,5 +1,4 @@
 import {
-  AMBIENT_TEMPERATURE,
   AIR_AMBIENT_EXCHANGE_FRACTION,
   MAXIMUM_TEMPERATURE,
   MAXIMUM_PAIR_EXCHANGE_FRACTION,
@@ -57,7 +56,7 @@ function conductTemperature(world: World): void {
       if (x + 1 < world.width) exchangeTemperature(world, index, index + 1)
       if (y + 1 < world.height) exchangeTemperature(world, index, index + world.width)
       if (world.material[index] === MaterialId.Empty) {
-        const ambientDifference = AMBIENT_TEMPERATURE - world.temperature[index]
+        const ambientDifference = world.ambientTemperature - world.temperature[index]
         world.temperatureDelta[index] += Math.round(ambientDifference * HEAT_CAPACITY[MaterialId.Empty] * AIR_AMBIENT_EXCHANGE_FRACTION)
       }
     }

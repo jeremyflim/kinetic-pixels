@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
 import { clearWorld, createWorld, paintStroke, replaceWorld, snapshotWorld, stepWorld } from './engine'
+import { MAXIMUM_ROOM_TEMPERATURE, MINIMUM_ROOM_TEMPERATURE } from './constants'
 import { renderWorld } from './render'
 import type { CellInspection, Snapshot, World } from './types'
 
@@ -13,6 +14,7 @@ type WorkerCommand =
   | { type: 'inspect'; requestId: number; x: number; y: number }
   | { type: 'replace'; snapshot: Snapshot }
   | { type: 'rate'; rate: number }
+  | { type: 'ambient'; temperature: number }
 
 let world: World | undefined
 let context: OffscreenCanvasRenderingContext2D | null = null
@@ -76,6 +78,9 @@ self.onmessage = (event: MessageEvent<WorkerCommand>) => {
     timeRate = command.rate
     lastTime = 0
     accumulator = 0
+  }
+  if (command.type === 'ambient') {
+    world.ambientTemperature = Math.max(MINIMUM_ROOM_TEMPERATURE, Math.min(MAXIMUM_ROOM_TEMPERATURE, Math.round(command.temperature)))
   }
   if (command.type === 'stroke') {
     paintStroke(world, command.fromX, command.fromY, command.toX, command.toY, command.radius, command.materialId, command.erase)

@@ -548,6 +548,28 @@ describe('world commands and persistence', () => {
     expect(world.phaseProgress.every((value) => value === 0)).toBe(true)
   })
 
+  it('uses the adjustable room temperature for air, ordinary paint, and erasing', () => {
+    const world = createWorld(121, false, 7, 7)
+    world.ambientTemperature = -25
+    clearWorld(world)
+    expect(world.temperature.every((value) => value === -25)).toBe(true)
+
+    paintCircle(world, 2, 2, 1, MaterialId.Sand)
+    expect(world.temperature[index(world, 2, 2)]).toBe(-25)
+    paintCircle(world, 5, 5, 1, MaterialId.Fire)
+    expect(world.temperature[index(world, 5, 5)]).toBe(MATERIAL_PROPERTIES[MaterialId.Fire].initialTemperature)
+    paintCircle(world, 2, 2, 1, MaterialId.Sand, true)
+    expect(world.temperature[index(world, 2, 2)]).toBe(-25)
+  })
+
+  it('moves empty air toward the adjustable room temperature', () => {
+    const world = createWorld(122, false, 1, 1)
+    world.ambientTemperature = 100
+    step(world, 2)
+    expect(world.temperature[0]).toBeGreaterThan(AMBIENT_TEMPERATURE)
+    expect(world.temperature[0]).toBeLessThan(100)
+  })
+
   it('round-trips save version 5 exactly', () => {
     const world = createWorld(13)
     world.tick = 12_345

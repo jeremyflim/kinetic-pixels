@@ -17,6 +17,7 @@ export interface World {
   temperatureDelta: Int32Array
   thermalRemainder: Int32Array
   moistureDelta: Int16Array
+  ambientTemperature: number
   tick: number
   seed: number
   randomState: number
