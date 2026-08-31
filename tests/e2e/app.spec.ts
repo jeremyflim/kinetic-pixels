@@ -88,6 +88,19 @@ test('physics continues ticking throughout a long drawing gesture', async ({ pag
   await expect(page.getByRole('button', { name: /Pause/ })).toBeVisible()
 })
 
+test('holding the pointer still continuously reapplies the active brush', async ({ page }) => {
+  const canvas = page.locator('canvas')
+  const box = await canvas.boundingBox()
+  if (!box) throw new Error('Canvas did not render')
+  await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.12)
+  await page.mouse.down()
+  await page.waitForTimeout(600)
+  const sandDuringHold = await materialCount(page, 1)
+  await page.mouse.up()
+  expect(sandDuringHold).toBeGreaterThan(120)
+  await expect(page.getByRole('button', { name: /Pause/ })).toBeVisible()
+})
+
 test('first canvas pointer starts and paints in the same gesture', async ({ page }) => {
   const canvas = page.locator('canvas')
   await canvas.click({ position: { x: 20, y: 20 } })

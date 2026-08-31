@@ -23,7 +23,8 @@ same way.
 ## Controls
 
 - Choose Sand, Water, Stone, Wood, or Fire from the Elements rail.
-- Click or drag on the field to paint; the first field click starts the simulation and paints.
+- Click, hold, or drag on the field to paint; a held pointer continually reapplies the brush.
+  The first field click starts the simulation and paints.
 - `Space` toggles Play/Pause.
 - `E` toggles Eraser and restores the previously selected material when toggled off.
 - `-`, `=`, and `+` change the circular brush radius from 1–20 cells.

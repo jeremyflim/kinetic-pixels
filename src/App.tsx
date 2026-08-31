@@ -50,6 +50,7 @@ export function App() {
   const runningRef = useRef(false)
   const pendingStroke = useRef<PendingStroke | null>(null)
   const strokeFrame = useRef<number | null>(null)
+  const continuousStrokeFrame = useRef<number | null>(null)
 
   const [ready, setReady] = useState(false)
   const [running, setRunningState] = useState(false)
@@ -85,6 +86,7 @@ export function App() {
 
   useEffect(() => () => {
     if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current)
+    if (continuousStrokeFrame.current !== null) cancelAnimationFrame(continuousStrokeFrame.current)
   }, [])
 
   const requestSnapshot = useCallback(() => new Promise<Snapshot>((resolve) => {
@@ -187,6 +189,18 @@ export function App() {
     }
   }
 
+  function startContinuousStroke() {
+    if (continuousStrokeFrame.current !== null) cancelAnimationFrame(continuousStrokeFrame.current)
+    const repeat = () => {
+      continuousStrokeFrame.current = null
+      const point = previousPoint.current
+      if (!pointerDown.current || !point) return
+      queueStroke(point, point)
+      continuousStrokeFrame.current = requestAnimationFrame(repeat)
+    }
+    continuousStrokeFrame.current = requestAnimationFrame(repeat)
+  }
+
   function onPointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     if (event.button !== 0 || !ready) return
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -199,6 +213,7 @@ export function App() {
       setRunning(true)
     }
     postStroke({ from: point, to: point, radius, materialId: selectedMaterial, erase: eraser })
+    startContinuousStroke()
   }
 
   function onPointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
@@ -211,8 +226,10 @@ export function App() {
   }
 
   function endPointer() {
-    flushPendingStroke()
     pointerDown.current = false
+    if (continuousStrokeFrame.current !== null) cancelAnimationFrame(continuousStrokeFrame.current)
+    continuousStrokeFrame.current = null
+    flushPendingStroke()
     previousPoint.current = null
   }
 
@@ -226,6 +243,8 @@ export function App() {
     pendingStroke.current = null
     if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current)
     strokeFrame.current = null
+    if (continuousStrokeFrame.current !== null) cancelAnimationFrame(continuousStrokeFrame.current)
+    continuousStrokeFrame.current = null
     workerRef.current?.postMessage({ type: 'clear' })
     setStartup(false)
   }
@@ -284,7 +303,7 @@ export function App() {
                 ref={canvasRef}
                 width={GRID_WIDTH}
                 height={GRID_HEIGHT}
-                aria-label={`Interactive ${GRID_WIDTH} by ${GRID_HEIGHT} cell pixel physics field. Click and drag to paint the selected material.`}
+                aria-label={`Interactive ${GRID_WIDTH} by ${GRID_HEIGHT} cell pixel physics field. Click, hold, or drag to paint the selected material.`}
                 data-ready={ready}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
