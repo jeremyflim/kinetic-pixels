@@ -68,8 +68,11 @@ test('shows the complete paintable material palette inside the element rail', as
     expect(box.y + box.height).toBeLessThanOrEqual(railBox.y + railBox.height)
   }
   const lastButtonBox = await buttons.last().boundingBox()
+  const leftColumnButtonBox = await page.getByRole('button', { name: 'Stone' }).boundingBox()
   const markBox = await page.locator('.rail-mark').boundingBox()
-  if (!lastButtonBox || !markBox) throw new Error('Palette footer did not render')
+  if (!lastButtonBox || !leftColumnButtonBox || !markBox) throw new Error('Palette footer did not render')
+  expect(lastButtonBox.x).toBeCloseTo(leftColumnButtonBox.x, 1)
+  expect(lastButtonBox.width).toBeCloseTo(leftColumnButtonBox.width, 1)
   expect(lastButtonBox.y + lastButtonBox.height).toBeLessThanOrEqual(markBox.y)
 
   await page.getByRole('button', { name: 'Gunpowder' }).click()

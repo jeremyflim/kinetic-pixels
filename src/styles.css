@@ -198,7 +198,7 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
   background: var(--mint);
   box-shadow: 0 0 0 0.1cqw #fff;
 }
-.material-button.last-material { grid-column: 1 / -1; width: calc((100% - 0.42cqw) / 2); justify-self: center; }
+.material-button.last-material { grid-column: 1; width: 100%; justify-self: stretch; }
 
 .rail-mark {
   margin-top: auto;

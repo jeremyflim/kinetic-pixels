@@ -58,6 +58,8 @@ simulation randomness. Rendering variation is a stable coordinate/material hash 
 visual noise.
 
 Further invariants and the worker contract are recorded in [docs/architecture.md](docs/architecture.md).
+The complete current element-by-element behavior map is recorded in
+[docs/reaction-matrix.md](docs/reaction-matrix.md).
 
 ## Saves and portable files
 
