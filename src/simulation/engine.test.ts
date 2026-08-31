@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { clearWorld, createWorld, paintStroke, replaceWorld, snapshotWorld, stepWorld } from './engine'
 import {
+  BURN_SPREAD_CHANCE,
   BURNING_FLAG,
   EMISSION_INTERVAL,
   FIRE_LIFETIME_MIN,
@@ -31,31 +32,35 @@ describe('materials', () => {
     const world = createWorld(1, false, 5, 5)
     world.material[index(world, 2, 1)] = MaterialId.Sand
     stepWorld(world)
-    expect(world.material[index(world, 2, 2)]).toBe(MaterialId.Sand)
-    world.material[index(world, 2, 3)] = MaterialId.Stone
+    const firstSand = world.material.findIndex((value) => value === MaterialId.Sand)
+    const firstX = firstSand % world.width
+    expect(Math.floor(firstSand / world.width)).toBe(2)
+    world.material[index(world, firstX, 3)] = MaterialId.Stone
     stepWorld(world)
-    expect([world.material[index(world, 1, 3)], world.material[index(world, 3, 3)]]).toContain(MaterialId.Sand)
+    const secondSand = world.material.findIndex((value) => value === MaterialId.Sand)
+    expect(Math.floor(secondSand / world.width)).toBe(3)
+    expect(secondSand % world.width).not.toBe(firstX)
   })
 
-  it('alternates scan direction without permanent lateral bias', () => {
-    const left = createWorld(2, false, 7, 5)
-    left.material[index(left, 3, 1)] = MaterialId.Sand
-    left.material[index(left, 3, 2)] = MaterialId.Stone
-    stepWorld(left)
-    const firstX = left.material.findIndex((value) => value === MaterialId.Sand) % left.width
-    const right = createWorld(2, false, 7, 5)
-    right.tick = 1
-    right.material[index(right, 3, 1)] = MaterialId.Sand
-    right.material[index(right, 3, 2)] = MaterialId.Stone
-    stepWorld(right)
-    const secondX = right.material.findIndex((value) => value === MaterialId.Sand) % right.width
-    expect([firstX, secondX].sort()).toEqual([2, 4])
+  it('randomly drifts falling Sand left and right across deterministic seeds', () => {
+    const deltas = new Set<number>()
+    for (let seed = 1; seed <= 128; seed += 1) {
+      const world = createWorld(Math.imul(seed, 0x9e3779b1), false, 5, 5)
+      world.material[index(world, 2, 1)] = MaterialId.Sand
+      stepWorld(world)
+      const sandX = world.material.findIndex((value) => value === MaterialId.Sand) % world.width
+      deltas.add(sandX - 2)
+    }
+    expect(deltas.has(-1)).toBe(true)
+    expect(deltas.has(1)).toBe(true)
   })
 
   it('lets Sand displace Water', () => {
     const world = createWorld(3, false, 3, 4)
     world.material[index(world, 1, 1)] = MaterialId.Sand
     world.material[index(world, 1, 2)] = MaterialId.Water
+    world.material[index(world, 0, 2)] = MaterialId.Stone
+    world.material[index(world, 2, 2)] = MaterialId.Stone
     world.material[index(world, 1, 3)] = MaterialId.Stone
     world.updatedAt[index(world, 1, 2)] = 1
     stepWorld(world)
@@ -74,6 +79,19 @@ describe('materials', () => {
     stepWorld(world)
     const waterX = world.material.findIndex((value) => value === MaterialId.Water) % world.width
     expect(Math.abs(waterX - 2)).toBeGreaterThan(1)
+  })
+
+  it('randomly drifts falling Water left and right across deterministic seeds', () => {
+    const deltas = new Set<number>()
+    for (let seed = 1; seed <= 128; seed += 1) {
+      const world = createWorld(Math.imul(seed, 0x9e3779b1), false, 5, 5)
+      world.material[index(world, 2, 1)] = MaterialId.Water
+      stepWorld(world)
+      const waterX = world.material.findIndex((value) => value === MaterialId.Water) % world.width
+      deltas.add(waterX - 2)
+    }
+    expect(deltas.has(-1)).toBe(true)
+    expect(deltas.has(1)).toBe(true)
   })
 
   it('levels Water quickly instead of retaining a sand-like mound', () => {
@@ -173,22 +191,31 @@ describe('materials', () => {
     stepWorld(world)
     expect(world.material.includes(MaterialId.Smoke)).toBe(true)
     expect(world.material.includes(MaterialId.Fire)).toBe(false)
-    expect(WOOD_BURN_DURATION).toBeLessThanOrEqual(120)
+    expect(WOOD_BURN_DURATION).toBeLessThanOrEqual(60)
     world.state[wood] = BURNING_FLAG | (WOOD_BURN_DURATION - 1)
     stepWorld(world)
     expect(world.material[wood]).toBe(MaterialId.Empty)
   })
 
-  it('spreads burning directly between adjacent Wood cells without creating Fire', () => {
-    const world = createWorld(12, false, 7, 6)
-    const burning = index(world, 2, 4)
-    const neighbor = index(world, 3, 4)
-    world.material[burning] = MaterialId.Wood
-    world.state[burning] = BURNING_FLAG
-    world.material[neighbor] = MaterialId.Wood
-    for (let tick = 0; tick < 50 && !(world.state[neighbor] & BURNING_FLAG); tick += 1) stepWorld(world)
-    expect(world.state[neighbor] & BURNING_FLAG).toBeTruthy()
-    expect(world.material.includes(MaterialId.Fire)).toBe(false)
+  it('spreads burning directly between adjacent Wood at a low probability without creating Fire', () => {
+    let ignitions = 0
+    let createdFire = false
+    const samples = 5_000
+    for (let seed = 1; seed <= samples; seed += 1) {
+      const world = createWorld(Math.imul(seed, 0x9e3779b1), false, 7, 6)
+      const burning = index(world, 2, 4)
+      const neighbor = index(world, 3, 4)
+      world.material[burning] = MaterialId.Wood
+      world.state[burning] = BURNING_FLAG
+      world.material[neighbor] = MaterialId.Wood
+      stepWorld(world)
+      if (world.state[neighbor] & BURNING_FLAG) ignitions += 1
+      createdFire ||= world.material.includes(MaterialId.Fire)
+    }
+    expect(BURN_SPREAD_CHANCE).toBeLessThan(0.01)
+    expect(ignitions).toBeGreaterThan(0)
+    expect(ignitions / samples).toBeLessThan(0.015)
+    expect(createdFire).toBe(false)
   })
 
   it('renders burning Wood with a distinct hot and charred palette', () => {
@@ -216,6 +243,21 @@ describe('materials', () => {
     expect(world.material.includes(MaterialId.Smoke)).toBe(true)
     stepWorld(world)
     expect(world.material.includes(MaterialId.Smoke)).toBe(false)
+  })
+
+  it('randomly drifts rising Smoke left and right across deterministic seeds', () => {
+    const deltas = new Set<number>()
+    for (let seed = 1; seed <= 128; seed += 1) {
+      const world = createWorld(Math.imul(seed, 0x9e3779b1), false, 5, 5)
+      world.tick = 1
+      world.material[index(world, 2, 3)] = MaterialId.Smoke
+      world.state[index(world, 2, 3)] = 10
+      stepWorld(world)
+      const smokeX = world.material.findIndex((value) => value === MaterialId.Smoke) % world.width
+      deltas.add(smokeX - 2)
+    }
+    expect(deltas.has(-1)).toBe(true)
+    expect(deltas.has(1)).toBe(true)
   })
 
   it('marks updated cells no later than the current tick', () => {

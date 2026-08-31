@@ -15,10 +15,12 @@ export type MaterialIdValue = (typeof MaterialId)[keyof typeof MaterialId]
 
 export const IGNITION_CHANCE = 0.24
 export const FLASH_BURN_CHANCE = 0.015
-export const BURN_SPREAD_CHANCE = 0.08
-export const WOOD_BURN_DURATION = 110
+export const BURN_SPREAD_CHANCE = 0.006
+export const WOOD_BURN_DURATION = 55
 export const EMISSION_INTERVAL = 5
 export const FIRE_DRIFT_CHANCE = 0.4
+export const FALLING_DRIFT_CHANCE = 0.3
+export const RISING_DRIFT_CHANCE = 0.45
 export const WATER_SPREAD_DISTANCE = 6
 export const FIRE_LIFETIME_MIN = 38
 export const FIRE_LIFETIME_MAX = 72
@@ -72,6 +74,20 @@ function neighbors(world: World, x: number, y: number): number[] {
   return result
 }
 
+function driftingVerticalAttempts(
+  world: World,
+  x: number,
+  y: number,
+  verticalDirection: -1 | 1,
+  driftChance: number,
+): readonly (readonly [number, number])[] {
+  const horizontalDirection = chance(world, 0.5) ? 1 : -1
+  const verticalY = y + verticalDirection
+  return chance(world, driftChance)
+    ? [[x + horizontalDirection, verticalY], [x, verticalY], [x - horizontalDirection, verticalY]]
+    : [[x, verticalY], [x + horizontalDirection, verticalY], [x - horizontalDirection, verticalY]]
+}
+
 function updateStatic(world: World, context: UpdateContext): void {
   world.updatedAt[context.index] = world.tick
 }
@@ -119,17 +135,13 @@ function updateWood(world: World, { index, x, y }: UpdateContext): void {
   }
 }
 
-function updateSand(world: World, { index, x, y, direction }: UpdateContext): void {
-  if (y >= world.height - 1) return updateStatic(world, { index, x, y, direction })
-  const below = at(world, x, y + 1)
-  if (world.material[below] === MaterialId.Empty) return move(world, index, below)
-  if (world.material[below] === MaterialId.Water) return swap(world, index, below)
-
-  const directions = [direction, -direction] as const
-  for (const offsetX of directions) {
-    const targetX = x + offsetX
-    if (!inBounds(world, targetX, y + 1)) continue
-    const target = at(world, targetX, y + 1)
+function updateSand(world: World, context: UpdateContext): void {
+  const { index, x, y } = context
+  if (y >= world.height - 1) return updateStatic(world, context)
+  const attempts = driftingVerticalAttempts(world, x, y, 1, FALLING_DRIFT_CHANCE)
+  for (const [targetX, targetY] of attempts) {
+    if (!inBounds(world, targetX, targetY)) continue
+    const target = at(world, targetX, targetY)
     if (world.material[target] === MaterialId.Empty) return move(world, index, target)
     if (world.material[target] === MaterialId.Water) return swap(world, index, target)
   }
@@ -146,10 +158,11 @@ function extinguishAroundWater(world: World, x: number, y: number): void {
   }
 }
 
-function updateWater(world: World, { index, x, y, direction }: UpdateContext): void {
+function updateWater(world: World, { index, x, y }: UpdateContext): void {
   extinguishAroundWater(world, x, y)
+  const flowDirection = chance(world, 0.5) ? 1 : -1
   const attempts = y < world.height - 1
-    ? [[x, y + 1], [x + direction, y + 1], [x - direction, y + 1]]
+    ? driftingVerticalAttempts(world, x, y, 1, FALLING_DRIFT_CHANCE)
     : []
   for (const [targetX, targetY] of attempts) {
     if (!inBounds(world, targetX, targetY)) continue
@@ -157,7 +170,7 @@ function updateWater(world: World, { index, x, y, direction }: UpdateContext): v
     if (world.material[target] === MaterialId.Empty) return move(world, index, target)
   }
 
-  for (const lateralDirection of [direction, -direction]) {
+  for (const lateralDirection of [flowDirection, -flowDirection]) {
     let destination = -1
     for (let distance = 1; distance <= WATER_SPREAD_DISTANCE; distance += 1) {
       const targetX = x + lateralDirection * distance
@@ -186,7 +199,7 @@ function igniteAdjacentWood(world: World, x: number, y: number): void {
   }
 }
 
-function updateFire(world: World, { index, x, y, direction }: UpdateContext): void {
+function updateFire(world: World, { index, x, y }: UpdateContext): void {
   if (neighbors(world, x, y).some((neighbor) => world.material[neighbor] === MaterialId.Water)) {
     empty(world, index)
     return
@@ -198,10 +211,7 @@ function updateFire(world: World, { index, x, y, direction }: UpdateContext): vo
     return
   }
   world.state[index] = lifetime - 1
-  const driftDirection = chance(world, 0.5) ? 1 : -1
-  const attempts = chance(world, FIRE_DRIFT_CHANCE)
-    ? [[x + driftDirection, y - 1], [x, y - 1], [x - driftDirection, y - 1]]
-    : [[x, y - 1], [x + direction, y - 1], [x - direction, y - 1]]
+  const attempts = driftingVerticalAttempts(world, x, y, -1, FIRE_DRIFT_CHANCE)
   for (const [targetX, targetY] of attempts) {
     if (!inBounds(world, targetX, targetY)) continue
     const target = at(world, targetX, targetY)
@@ -210,7 +220,7 @@ function updateFire(world: World, { index, x, y, direction }: UpdateContext): vo
   world.updatedAt[index] = world.tick
 }
 
-function updateSmoke(world: World, { index, x, y, direction }: UpdateContext): void {
+function updateSmoke(world: World, { index, x, y }: UpdateContext): void {
   const lifetime = world.state[index] || randomInt(world, SMOKE_LIFETIME_MIN, SMOKE_LIFETIME_MAX)
   if (lifetime <= 1) {
     empty(world, index)
@@ -218,7 +228,7 @@ function updateSmoke(world: World, { index, x, y, direction }: UpdateContext): v
   }
   world.state[index] = lifetime - 1
   if (world.tick % 2 === 0) {
-    const attempts = [[x, y - 1], [x + direction, y - 1], [x - direction, y - 1]]
+    const attempts = driftingVerticalAttempts(world, x, y, -1, RISING_DRIFT_CHANCE)
     for (const [targetX, targetY] of attempts) {
       if (!inBounds(world, targetX, targetY)) continue
       const target = at(world, targetX, targetY)
