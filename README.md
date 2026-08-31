@@ -1,3 +1,7 @@
+# Try the game here!
+
+https://jeremyflim.github.io/kinetic-pixels/
+
 # Kinetic Pixels
 
 Kinetic Pixels is a desktop-first, browser-only pixel-physics sandbox presented as a
