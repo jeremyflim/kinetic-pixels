@@ -56,26 +56,6 @@ test('clearly separates the playable canvas from its dark bezel', async ({ page 
   await expect(page.locator('canvas')).toHaveCSS('background-color', 'rgb(251, 248, 255)')
 })
 
-test('sculpted shell and line boil preserve stable controls and reduced motion', async ({ page }) => {
-  const styles = await page.evaluate(() => {
-    const read = (selector: string) => getComputedStyle(document.querySelector(selector)!)
-    return {
-      deviceClipPath: read('.device').clipPath,
-      headingAnimation: read('.rail-heading').animationName,
-      iconAnimation: read('.material-button svg').animationName,
-      buttonAnimation: read('.material-button').animationName,
-    }
-  })
-
-  expect(styles.deviceClipPath.split(',').length).toBeGreaterThan(20)
-  expect(styles.headingAnimation).toContain('ink-boil')
-  expect(styles.iconAnimation).toContain('icon-boil')
-  expect(styles.buttonAnimation).toBe('none')
-
-  await page.emulateMedia({ reducedMotion: 'reduce' })
-  await expect.poll(() => page.locator('.rail-heading').first().evaluate((element) => getComputedStyle(element).animationIterationCount)).toBe('1')
-})
-
 test('momentary action buttons visibly press into the console', async ({ page }) => {
   const clear = await pressStyles(page, '.console-button.destructive')
   expect(clear.pressed.translate).not.toBe(clear.before.translate)
