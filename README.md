@@ -43,10 +43,17 @@ at a fixed 60 Hz, caps catch-up work after throttling, and performs no recurring
 while paused.
 
 The simulation core under `src/simulation/` is independent of React, workers, and rendering.
-Material definitions use stable numeric IDs and a registry with reusable phase behaviors.
-Parallel `Uint8Array`, `Uint16Array`, and `Uint32Array` channels store material, deterministic
-state, and per-tick update markers. A seeded xorshift PRNG is the only source of simulation
-randomness. Rendering variation is a stable coordinate/material hash rather than visual noise.
+Material definitions use stable numeric IDs backed by one exported physical-properties table.
+Each entry declares phase, mobility, density, hardness, friction, conductivity, corrosiveness,
+temperature, ignition temperature, flammability, burn rate, and smoke yield. Movement and
+displacement consume those properties instead of duplicating per-material constants.
+
+Cross-material behavior lives in an exported sparse, directional reaction registry. Only
+meaningful pairs are listed—such as Fire → Wood, Water → Fire, and burning Wood → Wood—so adding
+a material does not require filling a mostly empty square matrix. Parallel `Uint8Array`,
+`Uint16Array`, and `Uint32Array` channels store material, deterministic state, and per-tick update
+markers. A seeded xorshift PRNG is the only source of simulation randomness. Rendering variation
+is a stable coordinate/material hash rather than visual noise.
 
 Further invariants and the worker contract are recorded in [docs/architecture.md](docs/architecture.md).
 
@@ -98,10 +105,10 @@ Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1
 
 | 192 × 180 scenario | Mean tick | Throughput |
 | --- | ---: | ---: |
-| Fully occupied stationary grid | 1.16 ms | 859.61 ticks/s |
-| Falling Sand | 4.53 ms | 220.73 ticks/s |
-| Water spread | 5.75 ms | 173.97 ticks/s |
-| Burning Wood / Fire / Smoke | 6.12 ms | 163.49 ticks/s |
+| Fully occupied stationary grid | 1.35 ms | 743.01 ticks/s |
+| Falling Sand | 4.59 ms | 217.78 ticks/s |
+| Water spread | 6.85 ms | 145.91 ticks/s |
+| Burning Wood / Fire / Smoke | 6.87 ms | 145.61 ticks/s |
 
 These figures are descriptive rather than CI thresholds because shared runners have noisy timing.
 

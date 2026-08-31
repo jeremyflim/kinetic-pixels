@@ -22,13 +22,30 @@ export interface UpdateContext {
 
 export type MaterialUpdateFunction = (world: World, context: UpdateContext) => void
 
+export type MaterialPhase = 'vacuum' | 'solid' | 'liquid' | 'gas' | 'energy'
+export type MaterialMobility = 'none' | 'immovable' | 'powder' | 'fluid' | 'rising'
+
+export interface MaterialProperties {
+  phase: MaterialPhase
+  mobility: MaterialMobility
+  density: number
+  hardness: number
+  friction: number
+  conductivity: boolean
+  corrosiveness: number
+  temperature: number
+  ignitionTemperature: number | null
+  flammability: number
+  burnRate: number
+  smokeYield: number
+}
+
 export interface MaterialDefinition {
   id: number
   key: string
   label: string
   paintable: boolean
-  phase: 'solid' | 'powder' | 'liquid' | 'gas' | 'energy'
-  density: number
+  properties: MaterialProperties
   colors: readonly string[]
   update: MaterialUpdateFunction
 }

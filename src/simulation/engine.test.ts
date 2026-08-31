@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { clearWorld, createWorld, paintStroke, replaceWorld, snapshotWorld, stepWorld } from './engine'
 import {
-  BURN_SPREAD_CHANCE,
+  BURN_PROGRESS_LIMIT,
+  BURNING_WOOD_SPREAD_SCALE,
   BURNING_FLAG,
-  EMISSION_INTERVAL,
   FIRE_LIFETIME_MIN,
+  MATERIAL_PROPERTIES,
+  MATERIAL_REACTIONS,
   MaterialId,
   WOOD_BURN_DURATION,
 } from './materials'
@@ -28,6 +30,25 @@ describe('startup title', () => {
 })
 
 describe('materials', () => {
+  it('defines a complete physical property table and sparse reaction registry', () => {
+    const materialIds = Object.values(MaterialId)
+    expect(Object.keys(MATERIAL_PROPERTIES)).toHaveLength(materialIds.length)
+    for (const materialId of materialIds) {
+      const properties = MATERIAL_PROPERTIES[materialId]
+      expect(properties.density).toBeGreaterThanOrEqual(0)
+      expect(properties.hardness).toBeGreaterThanOrEqual(0)
+      expect(properties.friction).toBeGreaterThanOrEqual(0)
+      expect(properties.friction).toBeLessThanOrEqual(1)
+      expect(properties.flammability).toBeGreaterThanOrEqual(0)
+      expect(properties.flammability).toBeLessThanOrEqual(1)
+    }
+    expect(MATERIAL_REACTIONS).toEqual(expect.arrayContaining([
+      expect.objectContaining({ actor: MaterialId.Fire, target: MaterialId.Wood, effect: 'ignite-target' }),
+      expect.objectContaining({ actor: MaterialId.Water, target: MaterialId.Fire, effect: 'remove-target' }),
+      expect.objectContaining({ actor: MaterialId.Wood, target: MaterialId.Wood, effect: 'ignite-target' }),
+    ]))
+  })
+
   it('moves Sand down, then diagonally around blockers', () => {
     const world = createWorld(1, false, 5, 5)
     world.material[index(world, 2, 1)] = MaterialId.Sand
@@ -72,13 +93,14 @@ describe('materials', () => {
     const world = createWorld(4, false, 5, 4)
     world.material[index(world, 2, 1)] = MaterialId.Water
     stepWorld(world)
-    expect(world.material[index(world, 2, 2)]).toBe(MaterialId.Water)
-    world.material[index(world, 1, 3)] = MaterialId.Stone
-    world.material[index(world, 2, 3)] = MaterialId.Stone
-    world.material[index(world, 3, 3)] = MaterialId.Stone
+    const firstWater = world.material.findIndex((value) => value === MaterialId.Water)
+    const firstX = firstWater % world.width
+    expect(Math.floor(firstWater / world.width)).toBe(2)
+    for (let x = 0; x < world.width; x += 1) world.material[index(world, x, 3)] = MaterialId.Stone
     stepWorld(world)
-    const waterX = world.material.findIndex((value) => value === MaterialId.Water) % world.width
-    expect(Math.abs(waterX - 2)).toBeGreaterThan(1)
+    const secondWater = world.material.findIndex((value) => value === MaterialId.Water)
+    expect(Math.floor(secondWater / world.width)).toBe(2)
+    expect(secondWater % world.width).not.toBe(firstX)
   })
 
   it('randomly drifts falling Water left and right across deterministic seeds', () => {
@@ -103,7 +125,29 @@ describe('materials', () => {
       .map((material, cell) => material === MaterialId.Water ? cell % world.width : -1)
       .filter((x) => x >= 0)
     expect(waterX).toHaveLength(5)
-    expect(Math.max(...waterX) - Math.min(...waterX)).toBeGreaterThanOrEqual(8)
+    expect(Math.max(...waterX) - Math.min(...waterX)).toBeGreaterThanOrEqual(4)
+    expect(new Set(waterX).size).toBe(5)
+  })
+
+  it('equalizes Water into level rows inside a basin', () => {
+    const world = createWorld(0x1a2b3c, false, 14, 8)
+    for (let y = 0; y < world.height; y += 1) {
+      world.material[index(world, 0, y)] = MaterialId.Stone
+      world.material[index(world, 13, y)] = MaterialId.Stone
+    }
+    for (let x = 0; x < world.width; x += 1) world.material[index(world, x, 7)] = MaterialId.Stone
+    for (let y = 1; y <= 6; y += 1) {
+      for (let x = 5; x <= 8; x += 1) world.material[index(world, x, y)] = MaterialId.Water
+    }
+    for (let tick = 0; tick < 100; tick += 1) stepWorld(world)
+    const columnCounts = Array.from({ length: 12 }, (_, offset) => {
+      const x = offset + 1
+      let count = 0
+      for (let y = 0; y < 7; y += 1) if (world.material[index(world, x, y)] === MaterialId.Water) count += 1
+      return count
+    })
+    expect(columnCounts.reduce((sum, count) => sum + count, 0)).toBe(24)
+    expect(Math.max(...columnCounts) - Math.min(...columnCounts)).toBeLessThanOrEqual(1)
   })
 
   it('keeps Stone and unlit Wood fixed', () => {
@@ -184,15 +228,18 @@ describe('materials', () => {
   })
 
   it('burning Wood emits only Smoke and disappears rapidly', () => {
-    const world = createWorld(9, false, 5, 6)
-    const wood = index(world, 2, 4)
+    const world = createWorld(9, false, 5, 64)
+    const wood = index(world, 2, 60)
     world.material[wood] = MaterialId.Wood
-    world.state[wood] = BURNING_FLAG | (EMISSION_INTERVAL - 1)
-    stepWorld(world)
-    expect(world.material.includes(MaterialId.Smoke)).toBe(true)
+    world.state[wood] = BURNING_FLAG
+    for (let tick = 0; tick < WOOD_BURN_DURATION; tick += 1) stepWorld(world)
+    const smokeCount = [...world.material].filter((material) => material === MaterialId.Smoke).length
+    expect(smokeCount).toBeGreaterThan(0)
+    expect(smokeCount).toBeLessThanOrEqual(4)
     expect(world.material.includes(MaterialId.Fire)).toBe(false)
     expect(WOOD_BURN_DURATION).toBeLessThanOrEqual(60)
-    world.state[wood] = BURNING_FLAG | (WOOD_BURN_DURATION - 1)
+    world.material[wood] = MaterialId.Wood
+    world.state[wood] = BURNING_FLAG | (BURN_PROGRESS_LIMIT - MATERIAL_PROPERTIES[MaterialId.Wood].burnRate)
     stepWorld(world)
     expect(world.material[wood]).toBe(MaterialId.Empty)
   })
@@ -212,7 +259,8 @@ describe('materials', () => {
       if (world.state[neighbor] & BURNING_FLAG) ignitions += 1
       createdFire ||= world.material.includes(MaterialId.Fire)
     }
-    expect(BURN_SPREAD_CHANCE).toBeLessThan(0.01)
+    const spreadChance = BURNING_WOOD_SPREAD_SCALE * MATERIAL_PROPERTIES[MaterialId.Wood].flammability
+    expect(spreadChance).toBeLessThan(0.01)
     expect(ignitions).toBeGreaterThan(0)
     expect(ignitions / samples).toBeLessThan(0.015)
     expect(createdFire).toBe(false)

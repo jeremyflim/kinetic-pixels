@@ -1,7 +1,11 @@
 import { MATERIAL_BY_ID, MaterialId, initializeTransientState } from './materials'
 import { normalizeSeed } from './random'
 import { rasterizeTitle } from './title'
-import { GRID_HEIGHT, GRID_WIDTH, type Snapshot, type World } from './types'
+import { GRID_HEIGHT, GRID_WIDTH, type MaterialMobility, type Snapshot, type World } from './types'
+
+const STATIONARY_MOBILITIES = new Set<MaterialMobility>(['immovable'])
+const FALLING_MOBILITIES = new Set<MaterialMobility>(['powder', 'fluid'])
+const RISING_MOBILITIES = new Set<MaterialMobility>(['rising'])
 
 export function createWorld(seed = 0x4b504958, withTitle = true, width = GRID_WIDTH, height = GRID_HEIGHT): World {
   const normalizedSeed = normalizeSeed(seed)
@@ -19,7 +23,7 @@ export function createWorld(seed = 0x4b504958, withTitle = true, width = GRID_WI
   return world
 }
 
-function updatePass(world: World, phases: ReadonlySet<string>, rising: boolean): void {
+function updatePass(world: World, mobilities: ReadonlySet<MaterialMobility>, rising: boolean): void {
   const direction = world.tick % 2 === 0 ? 1 : -1
   const startY = rising ? 0 : world.height - 1
   const endY = rising ? world.height : -1
@@ -32,7 +36,7 @@ function updatePass(world: World, phases: ReadonlySet<string>, rising: boolean):
       const index = y * world.width + x
       if (world.updatedAt[index] === world.tick) continue
       const definition = MATERIAL_BY_ID.get(world.material[index])
-      if (!definition || !phases.has(definition.phase)) continue
+      if (!definition || !mobilities.has(definition.properties.mobility)) continue
       definition.update(world, { direction, index, x, y })
     }
   }
@@ -40,9 +44,9 @@ function updatePass(world: World, phases: ReadonlySet<string>, rising: boolean):
 
 export function stepWorld(world: World): void {
   world.tick += 1
-  updatePass(world, new Set(['solid']), false)
-  updatePass(world, new Set(['powder', 'liquid']), false)
-  updatePass(world, new Set(['energy', 'gas']), true)
+  updatePass(world, STATIONARY_MOBILITIES, false)
+  updatePass(world, FALLING_MOBILITIES, false)
+  updatePass(world, RISING_MOBILITIES, true)
 }
 
 export function clearWorld(world: World): void {

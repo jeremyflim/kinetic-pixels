@@ -1,4 +1,4 @@
-import { BURNING_FLAG, BURN_PROGRESS_MASK, MATERIALS, MaterialId, WOOD_BURN_DURATION } from './materials'
+import { BURNING_FLAG, BURN_PROGRESS_LIMIT, BURN_PROGRESS_MASK, MATERIALS, MaterialId } from './materials'
 import type { World } from './types'
 
 const RGB = MATERIALS.map((material) => material.colors.map((color) => {
@@ -30,7 +30,7 @@ export function cellColor(world: World, index: number): readonly [number, number
   let color = colors[colorIndex(materialId, x, y, cellState, world.seed, colors.length)]
   if (isBurningWood) {
     const progress = cellState & BURN_PROGRESS_MASK
-    const burnRatio = progress / WOOD_BURN_DURATION
+    const burnRatio = progress / BURN_PROGRESS_LIMIT
     const hotColorCount = burnRatio < 0.55 ? 3 : 2
     const charredColorCount = burnRatio < 0.55 ? 1 : 2
     const showChar = colorIndex(materialId, x, y, cellState ^ world.tick, world.seed, hotColorCount + charredColorCount) >= hotColorCount
