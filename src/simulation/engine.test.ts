@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AMBIENT_TEMPERATURE } from './constants'
+import { AMBIENT_TEMPERATURE, THERMAL_ENERGY_UNIT_J_M3 } from './constants'
 import { clearWorld, createWorld, paintCircle, paintStroke, replaceWorld, snapshotWorld, stepWorld } from './engine'
 import {
   FIRE_LIFETIME_MIN,
@@ -53,8 +53,11 @@ describe('material model', () => {
     expect(MATERIALS.map((material) => material.id)).toEqual(materialIds)
     for (const materialId of materialIds) {
       const properties = MATERIAL_PROPERTIES[materialId]
+      expect(properties.massDensity).toBeGreaterThan(0)
+      expect(properties.specificHeatCapacity).toBeGreaterThan(0)
       expect(properties.thermalConductivity).toBeGreaterThanOrEqual(0)
       expect(properties.heatCapacity).toBeGreaterThan(0)
+      expect(properties.heatCapacity).toBe(Math.max(1, Math.round(properties.massDensity * properties.specificHeatCapacity / THERMAL_ENERGY_UNIT_J_M3)))
       expect(properties.moistureCapacity).toBeGreaterThanOrEqual(0)
     }
     expect(MATERIAL_REACTIONS.length).toBe(4)
@@ -155,16 +158,17 @@ describe('shared thermal physics', () => {
     expect(world.temperature[index(world, 5, 1)]).toBeGreaterThan(AMBIENT_TEMPERATURE + 30)
   })
 
-  it('diffuses a sustained heat source through arbitrarily long connected air', () => {
+  it('conducts through nearby air while the external environment suppresses long-range heating', () => {
     const world = createWorld(106, false, 15, 3)
     const source = index(world, 1, 1)
+    const nearbyAir = index(world, 2, 1)
     const distantAir = index(world, 13, 1)
     for (let tick = 0; tick < 2_400; tick += 1) {
       world.temperature[source] = 1_000
       stepWorld(world)
     }
-    expect(world.temperature[distantAir]).toBeGreaterThan(AMBIENT_TEMPERATURE + 5)
-    expect(world.temperature[distantAir]).toBeLessThan(200)
+    expect(world.temperature[nearbyAir]).toBeGreaterThan(AMBIENT_TEMPERATURE + 5)
+    expect(world.temperature[distantAir]).toBeLessThanOrEqual(AMBIENT_TEMPERATURE + 2)
   })
 
   it('cools air toward room temperature in proportion to its temperature difference', () => {
@@ -174,8 +178,8 @@ describe('shared thermal physics', () => {
     warm.temperature[0] = 100
     step(hot, 120)
     step(warm, 120)
-    expect(hot.temperature[0]).toBeGreaterThan(250)
-    expect(hot.temperature[0]).toBeLessThan(350)
+    expect(hot.temperature[0]).toBeLessThan(50)
+    expect(warm.temperature[0]).toBeLessThanOrEqual(27)
     expect(500 - hot.temperature[0]).toBeGreaterThan(100 - warm.temperature[0])
   })
 
@@ -188,7 +192,7 @@ describe('shared thermal physics', () => {
     place(world, 4, 2, MaterialId.Metal)
     const fireCell = index(world, 3, 4)
     let producedSteam = false
-    for (let tick = 0; tick < 600 && !producedSteam; tick += 1) {
+    for (let tick = 0; tick < 1_800 && !producedSteam; tick += 1) {
       if (world.material[fireCell] !== MaterialId.Fire) {
         place(world, 3, 4, MaterialId.Fire)
         world.state[fireCell] = FIRE_LIFETIME_MIN
@@ -196,8 +200,45 @@ describe('shared thermal physics', () => {
       stepWorld(world)
       producedSteam = world.material.includes(MaterialId.Steam)
     }
-    expect(world.temperature[water]).toBeGreaterThan(100)
     expect(producedSteam).toBe(true)
+  })
+
+  it('does not boil Water across an air gap before physical contact', () => {
+    const world = createWorld(110, false, 3, 5)
+    const water = place(world, 1, 1, MaterialId.Water)
+    const pan = place(world, 1, 3, MaterialId.Metal, 600)
+    for (let tick = 0; tick < 600; tick += 1) {
+      world.updatedAt[water] = world.tick + 1
+      world.temperature[pan] = 600
+      stepWorld(world)
+    }
+    expect(world.material[water]).toBe(MaterialId.Water)
+    expect(world.temperature[water]).toBeLessThan(100)
+    expect(world.phaseProgress[water]).toBe(0)
+  })
+
+  it('conserves pair energy across unequal volumetric heat capacities', () => {
+    const world = createWorld(111, false, 2, 1)
+    const stone = place(world, 0, 0, MaterialId.Stone, 800)
+    const metal = place(world, 1, 0, MaterialId.Metal, 20)
+    const totalEnergy = () => world.temperature[stone] * MATERIAL_PROPERTIES[MaterialId.Stone].heatCapacity
+      + world.temperature[metal] * MATERIAL_PROPERTIES[MaterialId.Metal].heatCapacity
+      + world.thermalRemainder[stone] + world.thermalRemainder[metal]
+    const before = totalEnergy()
+    step(world, 120)
+    expect(totalEnergy()).toBeCloseTo(before, 6)
+    expect(world.temperature[stone]).toBeGreaterThan(world.temperature[metal])
+  })
+
+  it('transfers far less sensible heat from Spark than from Fire', () => {
+    const transferred = (source: MaterialIdValue) => {
+      const world = createWorld(112, false, 2, 1)
+      place(world, 0, 0, source)
+      const metal = place(world, 1, 0, MaterialId.Metal)
+      step(world, 2)
+      return world.temperature[metal] - AMBIENT_TEMPERATURE
+    }
+    expect(transferred(MaterialId.Spark)).toBeLessThan(transferred(MaterialId.Fire))
   })
 
   it('continues transferring Lava heat through an intervening Stone layer', () => {
@@ -220,7 +261,7 @@ describe('shared thermal physics', () => {
 
   it('melts Stone into Lava and freezes cooled Lava into Stone using phase properties', () => {
     const hot = createWorld(103, false, 5, 5)
-    for (let y = 0; y < hot.height; y += 1) for (let x = 0; x < hot.width; x += 1) place(hot, x, y, MaterialId.Stone, 1_150)
+    for (let y = 0; y < hot.height; y += 1) for (let x = 0; x < hot.width; x += 1) place(hot, x, y, MaterialId.Stone, 1_800)
     step(hot, 90)
     expect(hot.material.includes(MaterialId.Lava)).toBe(true)
 
@@ -242,8 +283,13 @@ describe('shared thermal physics', () => {
     step(world, 2)
     expect(world.material[ice]).toBe(MaterialId.Ice)
     expect(world.phaseProgress[ice]).toBeGreaterThan(0)
-    expect(world.temperature[ice]).toBe(2)
-    step(world, 60)
+    expect(world.temperature[ice]).toBe(0)
+    for (let tick = 0; tick < 600 && world.material[ice] === MaterialId.Ice; tick += 1) {
+      for (let cell = 0; cell < world.material.length; cell += 1) {
+        if (world.material[cell] === MaterialId.Stone) world.temperature[cell] = 20
+      }
+      stepWorld(world)
+    }
     expect(world.material[ice]).toBe(MaterialId.Water)
   })
 
@@ -393,6 +439,21 @@ describe('moisture and combustion', () => {
 })
 
 describe('specific chemistry and existing electricity', () => {
+  it('heats Acid through the shared solver and boils it into vapor with sustained energy', () => {
+    const world = createWorld(28, false, 2, 1)
+    const acid = place(world, 0, 0, MaterialId.Acid)
+    const heater = place(world, 1, 0, MaterialId.Glass, 500)
+    step(world, 2)
+    expect(world.temperature[acid]).toBeGreaterThan(AMBIENT_TEMPERATURE)
+
+    for (let tick = 0; tick < 1_000 && world.material[acid] === MaterialId.Acid; tick += 1) {
+      world.temperature[heater] = 500
+      world.updatedAt[acid] = world.tick + 1
+      stepWorld(world)
+    }
+    expect(world.material[acid]).toBe(MaterialId.Steam)
+  })
+
   it('keeps Acid corrosion as a sparse identity-specific reaction', () => {
     const world = createWorld(27, false, 5, 2)
     const acid = place(world, 0, 0, MaterialId.Acid)
@@ -447,13 +508,29 @@ describe('world commands and persistence', () => {
     expect(world.phaseProgress.every((value) => value === 0)).toBe(true)
   })
 
-  it('round-trips save version 4 exactly', () => {
+  it('round-trips save version 5 exactly', () => {
     const world = createWorld(13)
     world.tick = 12_345
     const serialized = serializeSnapshot(snapshotWorld(world), 'FIRE TEST', '2026-08-31T00:00:00.000Z')
     const parsed = parseSave(serialized)
     expect(parsed.snapshot).toEqual(snapshotWorld(world))
+    expect(parsed.file.version).toBe(5)
+  })
+
+  it('loads version 4 saves with 16-bit phase progress', () => {
+    const world = createWorld(14)
+    const current = serializeSnapshot(snapshotWorld(world), 'V4 SAVE', '2026-08-31T00:00:00.000Z')
+    const legacyPhase = new Uint8Array(CELL_COUNT * 2)
+    legacyPhase[0] = 42
+    const legacy = {
+      ...current,
+      version: 4,
+      simulation: { ...current.simulation, phaseProgress: bytesToBase64(legacyPhase) },
+    }
+    const parsed = parseSave(legacy)
     expect(parsed.file.version).toBe(4)
+    expect(parsed.snapshot.phaseProgress).toBeInstanceOf(Uint32Array)
+    expect(parsed.snapshot.phaseProgress[0]).toBe(42)
   })
 
   it('migrates version 3 heat and Wet status into temperature and moisture', () => {

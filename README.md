@@ -33,9 +33,12 @@ same way.
 - `Space` toggles Play/Pause.
 - `E` toggles Eraser and restores the previously selected material when toggled off.
 - `I` toggles See Stats. While active, hovering a cell—including air—shows its live state and
-  material properties while normal painting remains available.
-- Scroll over the field to zoom toward the pointed cell. The vertical field gauge also controls
-  zoom from 100–400% and can return the view to 100%.
+  physical properties while normal painting remains available. The reading refreshes while the
+  pointer is stationary.
+- Monitor arms a persistent probe. Click or re-click the field to pin a cell; `Escape`, Monitor
+  again, or any other console control cancels it. Painting remains available while monitoring.
+- Scroll over the field to zoom toward the pointed cell. The full-height vertical bar in the
+  field's left bezel also controls zoom from 100–400% and can return the view to 100%.
 - `-`, `=`, and `+` change the circular brush radius from 1–20 cells.
 - Clear empties the world without restoring the title or changing the current tool, radius,
   or play state.
@@ -57,10 +60,12 @@ Material definitions use stable numeric IDs backed by one exported physical-prop
 Each entry declares movement, density, thermal conductivity and capacity, phase transitions,
 combustion, moisture, blast resistance, conductivity, and corrosion properties.
 
-Temperature persists in every cell, including empty air. A shared, unbounded local diffusion
-solver conducts it across every connected chain of cells and drives latent phase transitions
-and ignition. Air relaxes toward room temperature in proportion to its temperature difference,
-with a slower final approach near ambient, instead of imposing a range cutoff.
+Temperature persists in every cell, including empty air. Each material declares rounded mass
+density, specific heat, and thermal conductivity values for a named representative form. The
+shared solver derives volumetric heat capacity from density × specific heat, transfers conserved
+energy across cardinal edges, and drives latent phase transitions and ignition. Air exchanges
+energy aggressively with an implicit room-temperature environment, preventing long-lived hot-air
+bridges from boiling materials before contact.
 A second shared solver absorbs and diffuses moisture through porous materials,
 spends finite Water mass, and consumes heat while drying. Combustion consumes fuel and feeds
 heat back into the same thermal field, so fire spread emerges from temperature rather than
@@ -87,8 +92,8 @@ A save records the material, state, status, temperature, moisture, fuel, liquid-
 phase-progress grids, tick, initial seed, current PRNG state, format metadata, name, and timestamp.
 It does not record the selected tool, radius, dialog state, play state, startup hint, or pointer preview.
 
-JSON files use format `kinetic-pixels`, version `4`, fixed 192 × 180 dimensions, and Base64
-typed-array bytes. Version 2 and 3 saves remain loadable and migrate legacy burning, Wet, and
+JSON files use format `kinetic-pixels`, version `5`, fixed 192 × 180 dimensions, and Base64
+typed-array bytes. Versions 2–4 remain loadable; versions 2 and 3 migrate legacy burning, Wet, and
 0–255 heat state into the new fuel, moisture, and Celsius-like temperature channels.
 Imports are size-limited and fully validated before replacing the live world; bad JSON, unknown
 materials, unsupported versions, invalid dimensions, and decoded-length mismatches leave the
@@ -125,11 +130,11 @@ Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1
 
 | 192 × 180 scenario | Mean tick | Throughput |
 | --- | ---: | ---: |
-| Fully occupied stationary grid | 3.30 ms | 302.97 ticks/s |
-| Falling Sand | 6.69 ms | 149.39 ticks/s |
-| Water spread | 5.55 ms | 180.03 ticks/s |
-| Fully occupied Lava / thermal field | 8.66 ms | 115.53 ticks/s |
-| Burning Wood / Fire / Smoke | 8.03 ms | 124.54 ticks/s |
+| Fully occupied stationary grid | 3.62 ms | 276.60 ticks/s |
+| Falling Sand | 7.47 ms | 133.81 ticks/s |
+| Water spread | 6.17 ms | 161.95 ticks/s |
+| Fully occupied Lava / thermal field | 8.63 ms | 115.90 ticks/s |
+| Burning Wood / Fire / Smoke | 12.38 ms | 80.79 ticks/s |
 
 These figures are descriptive rather than CI thresholds because shared runners have noisy timing.
 

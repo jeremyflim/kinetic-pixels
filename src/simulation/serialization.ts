@@ -3,7 +3,7 @@ import { MATERIAL_BY_ID, MATERIAL_PROPERTIES, MaterialId, type MaterialIdValue, 
 import { CELL_COUNT, GRID_HEIGHT, GRID_WIDTH, type Snapshot } from './types'
 
 export const SAVE_FORMAT = 'kinetic-pixels'
-export const SAVE_VERSION = 4
+export const SAVE_VERSION = 5
 export const MAX_IMPORT_BYTES = 2_000_000
 
 interface SaveFileBase {
@@ -32,7 +32,7 @@ export interface SaveFileV3 extends SaveFileBase {
 }
 
 export interface SaveFileV4 extends SaveFileBase {
-  version: typeof SAVE_VERSION
+  version: 4
   simulation: SaveFileV2['simulation'] & {
     status: string
     temperature: string
@@ -43,7 +43,12 @@ export interface SaveFileV4 extends SaveFileBase {
   }
 }
 
-export type SaveFile = SaveFileV2 | SaveFileV3 | SaveFileV4
+export interface SaveFileV5 extends SaveFileBase {
+  version: typeof SAVE_VERSION
+  simulation: SaveFileV4['simulation']
+}
+
+export type SaveFile = SaveFileV2 | SaveFileV3 | SaveFileV4 | SaveFileV5
 
 const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 const LEGACY_BURNING_FLAG = 0x8000
@@ -96,6 +101,20 @@ function bytesToUint16(bytes: Uint8Array): Uint16Array {
   return values
 }
 
+function uint32ToBytes(values: Uint32Array): Uint8Array {
+  const bytes = new Uint8Array(values.length * 4)
+  const view = new DataView(bytes.buffer)
+  values.forEach((value, index) => view.setUint32(index * 4, value, true))
+  return bytes
+}
+
+function bytesToUint32(bytes: Uint8Array): Uint32Array {
+  const values = new Uint32Array(bytes.length / 4)
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  for (let index = 0; index < values.length; index += 1) values[index] = view.getUint32(index * 4, true)
+  return values
+}
+
 function int16ToBytes(values: Int16Array): Uint8Array {
   const bytes = new Uint8Array(values.length * 2)
   const view = new DataView(bytes.buffer)
@@ -114,7 +133,7 @@ export function sanitizeSaveName(value: string, fallback: string): string {
   return value.trim().slice(0, 24) || fallback
 }
 
-export function serializeSnapshot(snapshot: Snapshot, name: string, savedAt = new Date().toISOString()): SaveFileV4 {
+export function serializeSnapshot(snapshot: Snapshot, name: string, savedAt = new Date().toISOString()): SaveFileV5 {
   return {
     format: SAVE_FORMAT,
     version: SAVE_VERSION,
@@ -130,7 +149,7 @@ export function serializeSnapshot(snapshot: Snapshot, name: string, savedAt = ne
       moisture: bytesToBase64(snapshot.moisture),
       fuel: bytesToBase64(snapshot.fuel),
       liquidMass: bytesToBase64(snapshot.liquidMass),
-      phaseProgress: bytesToBase64(uint16ToBytes(snapshot.phaseProgress)),
+      phaseProgress: bytesToBase64(uint32ToBytes(snapshot.phaseProgress)),
     },
     metadata: { name: name.slice(0, 24), savedAt },
   }
@@ -160,12 +179,19 @@ function validateWordBytes(value: unknown, label: string): Uint8Array {
   return bytes
 }
 
+function validateDwordBytes(value: unknown, label: string): Uint8Array {
+  if (typeof value !== 'string') throw new Error('Save data is missing')
+  const bytes = base64ToBytes(value)
+  if (bytes.length !== CELL_COUNT * 4) throw new Error(`${label} data length is invalid`)
+  return bytes
+}
+
 function migrateLegacyFields(material: Uint8Array, status: Uint8Array, legacyHeat: Uint8Array): Pick<Snapshot, 'temperature' | 'moisture' | 'fuel' | 'liquidMass' | 'phaseProgress'> {
   const temperature = new Int16Array(CELL_COUNT)
   const moisture = new Uint8Array(CELL_COUNT)
   const fuel = new Uint8Array(CELL_COUNT)
   const liquidMass = new Uint8Array(CELL_COUNT)
-  const phaseProgress = new Uint16Array(CELL_COUNT)
+  const phaseProgress = new Uint32Array(CELL_COUNT)
   temperature.fill(AMBIENT_TEMPERATURE)
   for (let index = 0; index < material.length; index += 1) {
     const materialId = material[index] as MaterialIdValue
@@ -186,7 +212,7 @@ function migrateLegacyFields(material: Uint8Array, status: Uint8Array, legacyHea
 export function parseSave(input: unknown): { file: SaveFile; snapshot: Snapshot } {
   const root = record(input)
   if (root.format !== SAVE_FORMAT) throw new Error('Not a Kinetic Pixels save')
-  if (root.version !== 2 && root.version !== 3 && root.version !== SAVE_VERSION) throw new Error('Unsupported save version')
+  if (root.version !== 2 && root.version !== 3 && root.version !== 4 && root.version !== SAVE_VERSION) throw new Error('Unsupported save version')
   const grid = record(root.grid)
   if (grid.width !== GRID_WIDTH || grid.height !== GRID_HEIGHT) throw new Error('Save grid dimensions do not match')
   const simulation = record(root.simulation)
@@ -203,13 +229,15 @@ export function parseSave(input: unknown): { file: SaveFile; snapshot: Snapshot 
   }
 
   let fields: Pick<Snapshot, 'temperature' | 'moisture' | 'fuel' | 'liquidMass' | 'phaseProgress'>
-  if (root.version === SAVE_VERSION) {
+  if (root.version === 4 || root.version === SAVE_VERSION) {
     fields = {
       temperature: bytesToInt16(validateWordBytes(simulation.temperature, 'Temperature')),
       moisture: validateByteField(simulation.moisture, 'Moisture'),
       fuel: validateByteField(simulation.fuel, 'Fuel'),
       liquidMass: validateByteField(simulation.liquidMass, 'Liquid mass'),
-      phaseProgress: bytesToUint16(validateWordBytes(simulation.phaseProgress, 'Phase progress')),
+      phaseProgress: root.version === SAVE_VERSION
+        ? bytesToUint32(validateDwordBytes(simulation.phaseProgress, 'Phase progress'))
+        : Uint32Array.from(bytesToUint16(validateWordBytes(simulation.phaseProgress, 'Phase progress'))),
     }
   } else {
     const legacyHeat = root.version === 3 ? validateByteField(simulation.heat, 'Heat') : new Uint8Array(CELL_COUNT)

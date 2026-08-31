@@ -12,7 +12,8 @@ core has no React, DOM, worker, or canvas dependencies.
 - `MATERIAL_REACTIONS` contains only identity-specific chemistry. Unlisted pairs still exchange
   temperature, moisture, charge, or position through shared property-driven systems.
 - The world uses parallel typed arrays for material, progress/lifetime/charge state, status flags,
-  temperature, moisture, fuel, liquid mass, phase progress, and last-updated tick.
+  temperature, moisture, fuel, liquid mass, 32-bit phase progress, fractional thermal-energy
+  remainder, and last-updated tick.
 - Simulation randomness comes only from the serialized seeded PRNG.
 - Every cell is updated at most once per tick.
 - Falling passes scan bottom-to-top; rising passes scan top-to-bottom.
@@ -30,13 +31,22 @@ Every material declares a phase (`vacuum`, `solid`, `liquid`, `gas`, or `energy`
 (`none`, `immovable`, `powder`, `fluid`, or `rising`). Update passes are scheduled from mobility,
 which keeps immovable and movable solids distinct without special-casing their IDs.
 
-Density controls displacement, friction controls drift and liquid reach, hardness resists Acid,
-conductivity routes the current Spark charge behavior, and corrosiveness scales corrosion.
-Thermal conductivity and heat capacity drive a shared temperature solver. Every cell—including
-empty air—retains a Celsius-like gameplay temperature. Cardinal conduction is double-buffered
-and has no distance cutoff: energy reaches distant cells by repeatedly crossing local edges.
-Air far from room temperature cools proportionally to that difference; the final sub-degree
-integer remainder is staggered across eight thermal passes.
+Gameplay density controls displacement, friction controls drift and liquid reach, hardness resists
+Acid, electrical conductivity routes the current Spark charge behavior, and corrosiveness scales
+corrosion. Separate SI-like thermal fields declare representative mass density `ρ` (kg/m³),
+specific heat `c` (J/kg·K), and thermal conductivity `k` (W/m·K).
+
+The solver derives each cell's volumetric capacity from `C = ρc` and stores it in 10 kJ/m³·K
+energy units. Injected heat uses `Q = CΔT`. Adjacent cardinal cells exchange equal and opposite
+energy using the harmonic mean of their conductivities; exchange is capped below pair equilibrium
+for stability. A carried fractional-energy remainder preserves sub-degree transfers instead of
+forcing every nonzero edge to move one degree. This is why a one-cell air gap no longer acts like
+solid contact. Spatial scale and elapsed physical time are gameplay-accelerated calibration
+parameters; the capacity ratios and energy balance remain physically grounded.
+
+Every cell—including empty air—retains an integer Celsius temperature. Empty air also exchanges
+8% of its temperature-difference energy with an implicit 20°C environment on each 30 Hz thermal
+pass. Local air conduction still works, but heat no longer persists across long air chains.
 
 Phase transitions are material properties with directional thresholds and latent energy.
 Crossing a threshold moves excess energy into phase progress and pins the cell at the threshold;
@@ -61,16 +71,17 @@ matter is destroyed. Other explosive cells receive ignition energy instead of be
 chains use the same data model rather than a Gunpowder-to-Gunpowder pair reaction.
 
 Movement and combustion update at 60 Hz, temperature and phase behavior at 30 Hz, and moisture
-at 10 Hz. Version 4 saves serialize every canonical array. Version 2 and 3 files remain accepted;
-legacy burning, Wet, and heat values migrate into the new channels before replacement.
+at 10 Hz. Version 5 saves serialize 32-bit latent progress along with the other canonical arrays.
+Versions 2–4 remain accepted; legacy burning, Wet, heat, and 16-bit phase values migrate before
+replacement. Fractional thermal remainder is transient solver state and resets at a save boundary.
 
 ## Worker protocol
 
 The UI sends compact commands for initialization, play state, strokes, clearing, snapshots,
-single-cell inspection, and world replacement. The worker returns serialized snapshots or one
-small inspection record; it never mirrors the live grid into React. Pointer coordinates are
-converted to logical cells before commands are posted, and stroke endpoints are interpolated
-in the simulation core.
+single-cell inspection, and world replacement. See Stats and Monitor poll one selected cell at
+12.5 Hz; the worker returns only that small record and never mirrors the live grid into React.
+Pointer coordinates are converted to logical cells before commands are posted, and stroke
+endpoints are interpolated in the simulation core.
 
 ## Rendering
 
@@ -79,4 +90,22 @@ variation is a stable hash of material, coordinates, cell state, and seed. CSS s
 with `image-rendering: pixelated` while preserving the grid's 16:15 aspect ratio. A low-opacity
 red/blue thermal tint applies to every cell, including air, so the continuous field is visible.
 The fixed viewport can magnify its canvas from 100–400%; pointer-centered wheel calculations
-preserve the sampled world cell while the zoom gauge provides keyboard and direct-slider control.
+preserve the sampled world cell while the full-height bezel slider provides keyboard and direct
+control without changing the playfield dimensions.
+
+## Thermal references and representative assumptions
+
+The constants are rounded representatives, not claims that broad categories have one exact value:
+dry air near 20°C; packed quartz sand; basalt for Stone/Lava; dry medium-density wood; liquid
+n-octane for Oil; fresh water-rich biomass for Plant; a 20% hydrochloric-acid solution for Acid;
+mild steel for Metal; soda-lime glass; and water ice/steam. Fire is an effective burning cell that
+includes its local fuel reservoir, while Spark intentionally has minimal thermal mass and coupling.
+
+Primary and government technical references:
+
+- [NIST Chemistry WebBook: water thermochemistry and phase data](https://webbook.nist.gov/cgi/cbook.cgi?ID=C7732185&Mask=37&Units=SI)
+- [NIST standard thermal conductivity of air near room temperature](https://srd.nist.gov/JPCRD/jpcrd283.pdf)
+- [NIST Chemistry WebBook: liquid n-octane heat capacity](https://webbook.nist.gov/cgi/cbook.cgi?Mask=E&Source=1993CZA355-359)
+- [NIST selected-material thermal conductivity tables](https://nvlpubs.nist.gov/nistpubs/legacy/nsrds/nbsnsrds8.pdf)
+- [USDA Wood Handbook: density, heat capacity, and conductivity](https://www.fpl.fs.usda.gov/documnts/fplgtr/fplgtr282/fpl_gtr282.pdf)
+- [NIH PubChem: hydrochloric-acid solution density and 20.22% azeotrope boiling data](https://pubchem.ncbi.nlm.nih.gov/compound/Hydrochloric-Acid)

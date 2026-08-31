@@ -12,9 +12,10 @@ export interface World {
   moisture: Uint8Array
   fuel: Uint8Array
   liquidMass: Uint8Array
-  phaseProgress: Uint16Array
+  phaseProgress: Uint32Array
   updatedAt: Uint32Array
   temperatureDelta: Int32Array
+  thermalRemainder: Int32Array
   moistureDelta: Int16Array
   tick: number
   seed: number
@@ -49,6 +50,8 @@ export interface MaterialProperties {
   conductivity: boolean
   corrosiveness: number
   initialTemperature: number
+  massDensity: number
+  specificHeatCapacity: number
   thermalConductivity: number
   heatCapacity: number
   blastResistance: number
@@ -89,7 +92,7 @@ export interface Snapshot {
   moisture: Uint8Array
   fuel: Uint8Array
   liquidMass: Uint8Array
-  phaseProgress: Uint16Array
+  phaseProgress: Uint32Array
 }
 
 export interface CellInspection {

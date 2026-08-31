@@ -1,4 +1,4 @@
-import { Bomb, CirclePlay, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, ScanSearch, Snowflake, Sparkles, Trash2, Trees, Zap } from 'lucide-react'
+import { Activity, Bomb, CirclePlay, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, ScanSearch, Snowflake, Sparkles, Trash2, Trees, Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MemoryCardDialog } from './MemoryCardDialog'
 import { MATERIAL_BY_ID, MaterialId, PAINTABLE_MATERIALS, StatusFlag } from './simulation/materials'
@@ -67,8 +67,7 @@ export function App() {
   const pendingStroke = useRef<PendingStroke | null>(null)
   const strokeFrame = useRef<number | null>(null)
   const continuousStrokeFrame = useRef<number | null>(null)
-  const inspectionFrame = useRef<number | null>(null)
-  const pendingInspection = useRef<Point | null>(null)
+  const inspectionPending = useRef(false)
   const latestInspectionRequest = useRef(0)
 
   const [ready, setReady] = useState(false)
@@ -80,8 +79,20 @@ export function App() {
   const [memoryOpen, setMemoryOpen] = useState(false)
   const [preview, setPreview] = useState<Point | null>(null)
   const [inspectMode, setInspectMode] = useState(false)
+  const [monitorMode, setMonitorMode] = useState(false)
+  const [monitoredPoint, setMonitoredPoint] = useState<Point | null>(null)
   const [inspection, setInspection] = useState<CellInspection | null>(null)
   const [camera, setCamera] = useState<CameraState>({ zoom: MIN_ZOOM, offsetX: 0, offsetY: 0 })
+
+  const requestInspection = useCallback((point: Point) => {
+    if (inspectionPending.current) return
+    const worker = workerRef.current
+    if (!worker) return
+    inspectionPending.current = true
+    const requestId = ++requestCounter.current
+    latestInspectionRequest.current = requestId
+    worker.postMessage({ type: 'inspect', requestId, x: point.x, y: point.y })
+  }, [])
 
   const setRunning = useCallback((next: boolean) => {
     runningRef.current = next
@@ -102,8 +113,9 @@ export function App() {
         pendingSnapshots.current.get(event.data.requestId)?.(event.data.snapshot)
         pendingSnapshots.current.delete(event.data.requestId)
       }
-      if (event.data.type === 'inspection' && event.data.requestId === latestInspectionRequest.current && event.data.inspection) {
-        setInspection(event.data.inspection)
+      if (event.data.type === 'inspection') {
+        inspectionPending.current = false
+        if (event.data.requestId === latestInspectionRequest.current && event.data.inspection) setInspection(event.data.inspection)
       }
     }
     return () => worker.terminate()
@@ -112,7 +124,6 @@ export function App() {
   useEffect(() => () => {
     if (strokeFrame.current !== null) cancelAnimationFrame(strokeFrame.current)
     if (continuousStrokeFrame.current !== null) cancelAnimationFrame(continuousStrokeFrame.current)
-    if (inspectionFrame.current !== null) cancelAnimationFrame(inspectionFrame.current)
   }, [])
 
   const requestSnapshot = useCallback(() => new Promise<Snapshot>((resolve) => {
@@ -148,17 +159,62 @@ export function App() {
   }, [selectedMaterial])
 
   const toggleInspect = useCallback(() => {
+    setMonitorMode(false)
+    setMonitoredPoint(null)
     setInspectMode((active) => {
       if (active) setInspection(null)
       return !active
     })
   }, [])
 
+  const cancelMonitor = useCallback(() => {
+    setMonitorMode(false)
+    setMonitoredPoint(null)
+    setInspection(null)
+  }, [])
+
+  const toggleMonitor = useCallback(() => {
+    setMonitorMode((active) => {
+      if (active) {
+        setMonitoredPoint(null)
+        setInspection(null)
+      } else {
+        setInspectMode(false)
+        setInspection(null)
+      }
+      return !active
+    })
+  }, [])
+
+  useEffect(() => {
+    const target = monitorMode ? monitoredPoint : inspectMode ? preview : null
+    if (!target) return
+    requestInspection(target)
+    const timer = window.setInterval(() => requestInspection(target), 80)
+    return () => window.clearInterval(timer)
+  }, [inspectMode, monitorMode, monitoredPoint, preview, requestInspection])
+
+  useEffect(() => {
+    if (!monitorMode) return
+    function cancelForOutsideControl(event: PointerEvent) {
+      if (!(event.target instanceof Element)) return
+      if (event.target.closest('.canvas-stage') || event.target.closest('.monitor-button')) return
+      if (event.target.closest('button, input, select, textarea, [role="button"]')) cancelMonitor()
+    }
+    document.addEventListener('pointerdown', cancelForOutsideControl)
+    return () => document.removeEventListener('pointerdown', cancelForOutsideControl)
+  }, [cancelMonitor, monitorMode])
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.ctrlKey || event.altKey || event.metaKey) return
       if (memoryOpen) return
       if (isTextEditable(event.target)) return
+      if (event.key === 'Escape' && monitorMode) {
+        event.preventDefault()
+        cancelMonitor()
+        return
+      }
       if (event.code === 'Space' && event.target instanceof HTMLButtonElement) return
       if (event.code === 'Space') {
         event.preventDefault()
@@ -175,7 +231,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [memoryOpen, toggleEraser, toggleInspect, toggleRunning])
+  }, [cancelMonitor, memoryOpen, monitorMode, toggleEraser, toggleInspect, toggleRunning])
 
   function pointFromClient(clientX: number, clientY: number, canvas: HTMLCanvasElement): Point {
     const bounds = canvas.getBoundingClientRect()
@@ -287,24 +343,14 @@ export function App() {
     continuousStrokeFrame.current = requestAnimationFrame(repeat)
   }
 
-  function queueInspection(point: Point) {
-    pendingInspection.current = point
-    if (inspectionFrame.current !== null) return
-    inspectionFrame.current = requestAnimationFrame(() => {
-      inspectionFrame.current = null
-      const next = pendingInspection.current
-      pendingInspection.current = null
-      if (!next) return
-      const requestId = ++requestCounter.current
-      latestInspectionRequest.current = requestId
-      workerRef.current?.postMessage({ type: 'inspect', requestId, x: next.x, y: next.y })
-    })
-  }
-
   function onPointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     if (event.button !== 0 || !ready) return
     const point = pointFromClient(event.clientX, event.clientY, event.currentTarget)
-    if (inspectMode) queueInspection(point)
+    if (monitorMode) {
+      const pinned = { x: Math.floor(point.x), y: Math.floor(point.y) }
+      setMonitoredPoint(pinned)
+      requestInspection(pinned)
+    } else if (inspectMode) requestInspection(point)
     event.currentTarget.setPointerCapture(event.pointerId)
     pointerDown.current = true
     previousPoint.current = point
@@ -320,7 +366,7 @@ export function App() {
   function onPointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
     const point = pointFromClient(event.clientX, event.clientY, event.currentTarget)
     setPreview(point)
-    if (inspectMode) queueInspection(point)
+    if (inspectMode) requestInspection(point)
     if (pointerDown.current && previousPoint.current) {
       queueStroke(previousPoint.current, point)
       previousPoint.current = point
@@ -373,6 +419,7 @@ export function App() {
         inspection.status & StatusFlag.Charged ? 'Charged' : '',
       ].filter(Boolean).join(', ') || 'Stable'
     : ''
+  const reticlePoint = monitorMode ? monitoredPoint : inspectMode ? preview : null
 
   return (
     <main className="page-shell">
@@ -409,6 +456,18 @@ export function App() {
             <span className="status-space" aria-live="polite">{running ? '' : <b>● Paused</b>}</span>
           </div>
           <div className="canvas-well">
+            <label className="zoom-gauge">
+              <span className="sr-only">Field zoom</span>
+              <input
+                aria-label="Field zoom"
+                type="range"
+                min={MIN_ZOOM * 100}
+                max={MAX_ZOOM * 100}
+                step={ZOOM_STEP * 100}
+                value={camera.zoom * 100}
+                onChange={(event) => setZoomAt(Number(event.target.value) / 100, 0.5, 0.5)}
+              />
+            </label>
             <div ref={canvasStageRef} className="canvas-stage">
               <div
                 className="canvas-camera"
@@ -420,7 +479,7 @@ export function App() {
               >
                 <canvas
                   ref={canvasRef}
-                  className={inspectMode ? 'inspecting' : ''}
+                  className={inspectMode || monitorMode ? 'inspecting' : ''}
                   width={GRID_WIDTH}
                   height={GRID_HEIGHT}
                   aria-label={`Interactive ${GRID_WIDTH} by ${GRID_HEIGHT} cell pixel physics field. Click, hold, or drag to paint the selected material.`}
@@ -429,7 +488,7 @@ export function App() {
                   onPointerMove={onPointerMove}
                   onPointerUp={endPointer}
                   onPointerCancel={endPointer}
-                  onPointerLeave={() => { setPreview(null); setInspection(null); if (!pointerDown.current) endPointer() }}
+                  onPointerLeave={() => { setPreview(null); if (inspectMode) setInspection(null); if (!pointerDown.current) endPointer() }}
                 />
               {preview && (
                 <div
@@ -442,13 +501,13 @@ export function App() {
                   }}
                 />
               )}
-              {preview && inspectMode && (
+              {reticlePoint && (
                 <div
                   className="inspect-reticle"
                   aria-hidden="true"
                   style={{
-                    left: `${((Math.floor(preview.x) + 0.5) / GRID_WIDTH) * 100}%`,
-                    top: `${((Math.floor(preview.y) + 0.5) / GRID_HEIGHT) * 100}%`,
+                    left: `${((Math.floor(reticlePoint.x) + 0.5) / GRID_WIDTH) * 100}%`,
+                    top: `${((Math.floor(reticlePoint.y) + 0.5) / GRID_HEIGHT) * 100}%`,
                     width: `${100 / GRID_WIDTH}%`,
                     height: `${100 / GRID_HEIGHT}%`,
                   }}
@@ -456,24 +515,9 @@ export function App() {
               )}
               </div>
               {startup && <div className="startup-hint"><CirclePlay aria-hidden="true" /><span>Click to play</span></div>}
-              <label className="zoom-gauge">
-                <span>Zoom</span>
-                <b>+</b>
-                <input
-                  aria-label="Field zoom"
-                  type="range"
-                  min={MIN_ZOOM * 100}
-                  max={MAX_ZOOM * 100}
-                  step={ZOOM_STEP * 100}
-                  value={camera.zoom * 100}
-                  onChange={(event) => setZoomAt(Number(event.target.value) / 100, 0.5, 0.5)}
-                />
-                <b>−</b>
-                <output>{Math.round(camera.zoom * 100)}%</output>
-              </label>
-              {inspectMode && (
-                <aside className="inspection-panel" aria-live="polite" aria-label="Pixel inspection">
-                  <header><span>Pixel probe</span><b>{inspection ? `${inspection.x}, ${inspection.y}` : 'Hover field'}</b></header>
+              {(inspectMode || monitorMode) && (
+                <aside className={`inspection-panel ${monitorMode ? 'monitoring' : ''}`} aria-live="polite" aria-label="Pixel inspection">
+                  <header><span>{monitorMode ? 'Pixel monitor' : 'Pixel probe'}</span><b>{inspection ? `${inspection.x}, ${inspection.y}` : monitorMode ? 'Click field' : 'Hover field'}</b></header>
                   {inspection && inspectedProperties ? (
                     <dl>
                       <dt>Material</dt><dd>{inspection.materialId === MaterialId.Empty ? 'Air' : inspectedMaterial?.label}</dd>
@@ -481,11 +525,13 @@ export function App() {
                       <dt>Condition</dt><dd>{inspectedConditions}</dd>
                       <dt>State channel</dt><dd>{inspection.state}</dd>
                       <dt>Type</dt><dd>{inspectedProperties.phase} / {inspectedProperties.mobility}</dd>
-                      <dt>Density</dt><dd>{inspectedProperties.density}</dd>
+                      <dt>Flow density</dt><dd>{inspectedProperties.density}</dd>
                       <dt>Hardness</dt><dd>{inspectedProperties.hardness}</dd>
                       <dt>Friction</dt><dd>{inspectedProperties.friction}</dd>
-                      <dt>Heat flow</dt><dd>{inspectedProperties.thermalConductivity}</dd>
-                      <dt>Heat capacity</dt><dd>{inspectedProperties.heatCapacity}</dd>
+                      <dt>Mass density</dt><dd>{inspectedProperties.massDensity} kg/m³</dd>
+                      <dt>Specific heat</dt><dd>{inspectedProperties.specificHeatCapacity} J/kg·K</dd>
+                      <dt>Conductivity</dt><dd>{inspectedProperties.thermalConductivity} W/m·K</dd>
+                      <dt>Thermal mass</dt><dd>{inspectedProperties.heatCapacity} units/K</dd>
                       <dt>Moisture</dt><dd>{inspection.moisture} / {inspectedProperties.moistureCapacity}</dd>
                       <dt>Fuel</dt><dd>{inspection.fuel} / {inspectedProperties.fuel}</dd>
                       <dt>Liquid mass</dt><dd>{inspection.liquidMass}</dd>
@@ -496,7 +542,7 @@ export function App() {
                       <dt>Conductive</dt><dd>{inspectedProperties.conductivity ? 'Yes' : 'No'}</dd>
                       <dt>Corrosiveness</dt><dd>{inspectedProperties.corrosiveness}</dd>
                     </dl>
-                  ) : <p>Move across the field to read a cell.</p>}
+                  ) : <p>{monitorMode ? 'Click a pixel to pin its live channel.' : 'Move across the field to read a cell.'}</p>}
                 </aside>
               )}
             </div>
@@ -513,6 +559,7 @@ export function App() {
               <button className={`console-button ${eraser ? 'active' : ''}`} aria-pressed={eraser} onClick={toggleEraser}><Eraser aria-hidden="true" /><span>Eraser</span><kbd>E</kbd></button>
               <button className="console-button destructive" onClick={clear}><Trash2 aria-hidden="true" /><span>Clear</span></button>
               <button className={`console-button inspect-button ${inspectMode ? 'active' : ''}`} aria-pressed={inspectMode} onClick={toggleInspect}><ScanSearch aria-hidden="true" /><span>See stats</span><kbd>I</kbd></button>
+              <button className={`console-button inspect-button monitor-button ${monitorMode ? 'active' : ''}`} aria-pressed={monitorMode} onClick={toggleMonitor}><Activity aria-hidden="true" /><span>Monitor</span></button>
             </div>
           </div>
           <div className="control-bottom halftone">

@@ -1,10 +1,11 @@
 import {
   AMBIENT_TEMPERATURE,
-  AIR_COOLING_DIVISOR,
-  AIR_COOLING_INTERVAL,
+  AIR_AMBIENT_EXCHANGE_FRACTION,
   MAXIMUM_TEMPERATURE,
+  MAXIMUM_PAIR_EXCHANGE_FRACTION,
   MINIMUM_TEMPERATURE,
   MOISTURE_INTERVAL,
+  THERMAL_CONDUCTANCE_SCALE,
   THERMAL_INTERVAL,
 } from './constants'
 import {
@@ -21,34 +22,35 @@ function properties(world: World, index: number): MaterialProperties {
   return MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
 }
 
+const THERMAL_CONDUCTIVITY = Float64Array.from(Object.values(MaterialId).map((id) => MATERIAL_PROPERTIES[id].thermalConductivity))
+const HEAT_CAPACITY = Uint16Array.from(Object.values(MaterialId).map((id) => MATERIAL_PROPERTIES[id].heatCapacity))
+
 function clampTemperature(value: number): number {
   return Math.max(MINIMUM_TEMPERATURE, Math.min(MAXIMUM_TEMPERATURE, value))
-}
-
-function temperatureChange(energy: number, heatCapacity: number): number {
-  if (energy === 0) return 0
-  const magnitude = Math.trunc(Math.abs(energy) / Math.max(1, heatCapacity))
-  return Math.sign(energy) * Math.max(1, magnitude)
 }
 
 function exchangeTemperature(world: World, first: number, second: number): void {
   const difference = world.temperature[first] - world.temperature[second]
   if (Math.abs(difference) < 2) return
-  const firstProperties = properties(world, first)
-  const secondProperties = properties(world, second)
-  const conductivity = Math.min(firstProperties.thermalConductivity, secondProperties.thermalConductivity)
+  const firstMaterial = world.material[first]
+  const secondMaterial = world.material[second]
+  const firstConductivity = THERMAL_CONDUCTIVITY[firstMaterial]
+  const secondConductivity = THERMAL_CONDUCTIVITY[secondMaterial]
+  const conductivity = firstConductivity + secondConductivity > 0
+    ? 2 * firstConductivity * secondConductivity / (firstConductivity + secondConductivity)
+    : 0
   if (conductivity <= 0) return
-  let energy = Math.trunc(difference * conductivity / 128)
-  if (energy === 0) energy = Math.sign(difference)
-  const maximum = Math.max(1, Math.trunc(Math.abs(difference) * Math.min(firstProperties.heatCapacity, secondProperties.heatCapacity) / 4))
-  energy = Math.sign(energy) * Math.min(Math.abs(energy), maximum)
-  world.temperatureDelta[first] -= temperatureChange(energy, firstProperties.heatCapacity)
-  world.temperatureDelta[second] += temperatureChange(energy, secondProperties.heatCapacity)
+  const firstCapacity = HEAT_CAPACITY[firstMaterial]
+  const secondCapacity = HEAT_CAPACITY[secondMaterial]
+  const equilibriumEnergy = Math.abs(difference) * firstCapacity * secondCapacity / (firstCapacity + secondCapacity)
+  const requestedEnergy = Math.abs(difference) * conductivity * THERMAL_CONDUCTANCE_SCALE
+  const energy = Math.round(Math.sign(difference) * Math.min(requestedEnergy, equilibriumEnergy * MAXIMUM_PAIR_EXCHANGE_FRACTION))
+  world.temperatureDelta[first] -= energy
+  world.temperatureDelta[second] += energy
 }
 
 function conductTemperature(world: World): void {
   world.temperatureDelta.fill(0)
-  const coolingFrame = Math.floor(world.tick / THERMAL_INTERVAL) % AIR_COOLING_INTERVAL
   for (let y = 0; y < world.height; y += 1) {
     for (let x = 0; x < world.width; x += 1) {
       const index = y * world.width + x
@@ -56,16 +58,19 @@ function conductTemperature(world: World): void {
       if (y + 1 < world.height) exchangeTemperature(world, index, index + world.width)
       if (world.material[index] === MaterialId.Empty) {
         const ambientDifference = AMBIENT_TEMPERATURE - world.temperature[index]
-        const proportionalCooling = Math.trunc(ambientDifference / AIR_COOLING_DIVISOR)
-        if (proportionalCooling !== 0) world.temperatureDelta[index] += proportionalCooling
-        else if (ambientDifference !== 0 && index % AIR_COOLING_INTERVAL === coolingFrame) {
-          world.temperatureDelta[index] += Math.sign(ambientDifference)
-        }
+        world.temperatureDelta[index] += Math.round(ambientDifference * HEAT_CAPACITY[MaterialId.Empty] * AIR_AMBIENT_EXCHANGE_FRACTION)
       }
     }
   }
   for (let index = 0; index < world.temperature.length; index += 1) {
-    world.temperature[index] = clampTemperature(world.temperature[index] + world.temperatureDelta[index])
+    const capacity = HEAT_CAPACITY[world.material[index]]
+    const totalEnergy = world.thermalRemainder[index] + world.temperatureDelta[index]
+    const temperatureDelta = Math.trunc(totalEnergy / capacity)
+    const nextTemperature = clampTemperature(world.temperature[index] + temperatureDelta)
+    world.temperature[index] = nextTemperature
+    world.thermalRemainder[index] = nextTemperature === MINIMUM_TEMPERATURE || nextTemperature === MAXIMUM_TEMPERATURE
+      ? 0
+      : totalEnergy - temperatureDelta * capacity
   }
 }
 
@@ -86,7 +91,7 @@ function updatePhaseAndIgnition(world: World): void {
       const availableEnergy = distance * materialProperties.heatCapacity
       const neededEnergy = Math.max(0, transition.latentHeat - world.phaseProgress[index])
       const absorbedEnergy = Math.min(availableEnergy, neededEnergy)
-      world.phaseProgress[index] = Math.min(65_535, world.phaseProgress[index] + absorbedEnergy)
+      world.phaseProgress[index] = Math.min(0xffff_ffff, world.phaseProgress[index] + absorbedEnergy)
       const direction = transition.direction === 'above' ? 1 : -1
       world.temperature[index] = transition.temperature
       if (world.phaseProgress[index] >= transition.latentHeat) {
@@ -97,7 +102,7 @@ function updatePhaseAndIgnition(world: World): void {
         materialProperties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
       }
     } else {
-      world.phaseProgress[index] = Math.max(0, world.phaseProgress[index] - 4)
+      world.phaseProgress[index] = Math.max(0, world.phaseProgress[index] - materialProperties.heatCapacity)
     }
 
     const ignitionTemperature = materialProperties.ignitionTemperature

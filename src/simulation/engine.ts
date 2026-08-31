@@ -21,9 +21,10 @@ export function createWorld(seed = 0x4b504958, withTitle = true, width = GRID_WI
     moisture: new Uint8Array(width * height),
     fuel: new Uint8Array(width * height),
     liquidMass: new Uint8Array(width * height),
-    phaseProgress: new Uint16Array(width * height),
+    phaseProgress: new Uint32Array(width * height),
     updatedAt: new Uint32Array(width * height),
     temperatureDelta: new Int32Array(width * height),
+    thermalRemainder: new Int32Array(width * height),
     moistureDelta: new Int16Array(width * height),
     tick: 0,
     seed: normalizedSeed,
@@ -72,6 +73,7 @@ export function clearWorld(world: World): void {
   world.phaseProgress.fill(0)
   world.updatedAt.fill(0)
   world.temperatureDelta.fill(0)
+  world.thermalRemainder.fill(0)
   world.moistureDelta.fill(0)
 }
 
@@ -98,6 +100,7 @@ export function paintCircle(world: World, centerX: number, centerY: number, radi
         world.fuel[index] = 0
         world.liquidMass[index] = 0
         world.phaseProgress[index] = 0
+        world.thermalRemainder[index] = 0
       } else {
         const definition = MATERIAL_BY_ID.get(materialId)
         const canPaint = definition?.paintable && (
@@ -162,6 +165,7 @@ export function replaceWorld(world: World, snapshot: Snapshot): void {
   world.phaseProgress.set(snapshot.phaseProgress)
   world.updatedAt.fill(0)
   world.temperatureDelta.fill(0)
+  world.thermalRemainder.fill(0)
   world.moistureDelta.fill(0)
   world.tick = snapshot.tick >>> 0
   world.seed = normalizeSeed(snapshot.seed)

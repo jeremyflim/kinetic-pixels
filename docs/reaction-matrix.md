@@ -7,10 +7,9 @@ possible pair.
 ## How every pair interacts
 
 Every one of the 120 distinct non-empty material pairs exchanges temperature when adjacent.
-Heat can continue through chains of cells, including empty air, so the effect is not limited to
-the first touching pair and has no maximum range. Empty air cools toward room temperature at a
-rate proportional to its temperature difference while the same local solver continues spreading
-the field.
+Heat crosses only cardinal cell boundaries. Empty air participates locally but also exchanges
+energy rapidly with a 20°C external environment, so an air gap is not equivalent to solid contact
+and long hot-air bridges decay.
 
 Additional interactions are selected by properties rather than material names:
 
@@ -31,27 +30,29 @@ interaction while continuing to conduct energy.
 
 ## Material property table
 
-Temperature values are Celsius-like gameplay units. The relative ordering and thresholds are
-intentional; this is not an SI-unit thermodynamics solver.
+Temperature is integer Celsius. Thermal capacity is derived as `round(ρ × c / 10,000)` in
+10 kJ/m³·K units; the minimum value is one unit for integer-grid stability. Gameplay density,
+which controls movement, remains separate from physical mass density.
 
-| Material | Phase / movement | Density | Conductivity / capacity | Initial temperature | Phase transitions | Ignition | Moisture capacity |
-| --- | --- | ---: | ---: | ---: | --- | ---: | ---: |
-| Sand | Movable solid / powder | 5 | 24 / 4 | 20 | Above 900 → Glass | — | 96 |
-| Water | Liquid / fluid | 2 | 48 / 4 | 20 | Above 100 → Steam; below −2 → Ice | — | — |
-| Stone | Solid / immovable | 10 | 96 / 8 | 20 | Above 1,000 → Lava | — | — |
-| Wood | Solid / immovable | 8 | 20 / 3 | 20 | — | 160 | 180 |
-| Fire | Energy / rising | 0.02 | 48 / 1 | 600 | — | — | — |
-| Smoke | Gas / rising | 0.01 | 10 / 1 | 120 | — | — | — |
-| Oil | Liquid / fluid | 1 | 12 / 3 | 20 | — | 145 | — |
-| Plant | Solid / immovable | 4 | 12 / 2 | 20 | — | 180 | 220 |
-| Acid | Liquid / fluid | 2.5 | 40 / 4 | 20 | — | — | — |
-| Metal | Solid / immovable | 12 | 255 / 10 | 20 | — | — | — |
-| Lava | Liquid / fluid | 7 | 96 / 8 | 1,200 | Below 850 → Stone | — | — |
-| Ice | Movable solid / powder | 1.6 | 76 / 5 | −10 | Above 2 → Water | — | — |
-| Spark | Energy / rising | 0.005 | 80 / 1 | 800 | — | — | — |
-| Gunpowder | Movable solid / powder | 4 | 18 / 2 | 20 | — | 160 | 255 |
-| Glass | Solid / immovable | 9 | 34 / 5 | 20 | — | — | — |
-| Steam | Gas / rising | 0.015 | 14 / 2 | 110 | Below 90 → Water | — | — |
+| Material | Representative form | ρ kg/m³ | c J/kg·K | k W/m·K | Capacity | Initial °C | Phase transitions |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Air | Dry air, 20°C | 1.2 | 1,005 | 0.026 | 1 | 20 | — |
+| Sand | Packed quartz | 1,600 | 830 | 0.27 | 133 | 20 | Above 1,700 → Glass |
+| Water | Liquid water | 998 | 4,180 | 0.6 | 417 | 20 | Above 100 → Steam; below 0 → Ice |
+| Stone | Basalt | 2,900 | 840 | 1.7 | 244 | 20 | Above 1,200 → Lava |
+| Wood | Dry medium-density wood | 500 | 1,300 | 0.12 | 65 | 20 | Ignites at 160 |
+| Fire | Effective burning cell | 100 | 1,200 | 0.08 | 12 | 600 | — |
+| Smoke | Hot gas/aerosol | 1.2 | 1,100 | 0.04 | 1 | 120 | — |
+| Oil | Liquid n-octane | 700 | 2,220 | 0.13 | 155 | 20 | Ignites at 145 |
+| Plant | Fresh water-rich biomass | 700 | 3,500 | 0.2 | 245 | 20 | Ignites at 180 |
+| Acid | 20% HCl solution | 1,100 | 3,600 | 0.5 | 396 | 20 | Above 108 → Steam |
+| Metal | Mild steel | 7,850 | 470 | 54 | 369 | 20 | — |
+| Lava | Molten basalt | 2,700 | 1,000 | 1.5 | 270 | 1,200 | Below 1,000 → Stone |
+| Ice | Water ice | 917 | 2,100 | 2.2 | 193 | −10 | Above 0 → Water |
+| Spark | Electrical pulse | 0.1 | 1,000 | 0.005 | 1 | 800 | — |
+| Gunpowder | Packed black powder | 1,000 | 1,000 | 0.1 | 100 | 20 | Ignites at 160 |
+| Glass | Soda-lime glass | 2,500 | 840 | 1 | 210 | 20 | — |
+| Steam | Water vapor | 0.6 | 2,000 | 0.025 | 1 | 110 | Below 95 → Water |
 
 Each transition has a latent-energy requirement. Excess temperature is consumed into progress
 and the cell remains at its threshold until continued energy transfer completes the conversion.
@@ -72,7 +73,7 @@ moisture through the same saturation-based algorithm:
 | Sand/Wood/Plant/Gunpowder + any porous material | Moisture diffuses through the boundary according to the lower diffusivity |
 | Moist porous material + heat | Evaporation lowers moisture and temperature; sufficiently large evaporation can create Steam |
 
-Moisture above 35% saturation prevents ignition and extinguishes active combustion. Lesser
+Moisture above 15% saturation prevents ignition and extinguishes active combustion. Lesser
 moisture raises the ignition temperature. Wetness is therefore continuous state, not a Wet
 material variant or a Gunpowder-only flag.
 
@@ -84,10 +85,10 @@ decides whether surrounding cells become hot enough to ignite.
 
 | Material | Fuel | Burn rate per 60 Hz update | Heat per consumed fuel | Smoke chance per update | Special outcome |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Wood | 255 | 3 | 20 | 1.2% | Burns away after about 85 updates if uninterrupted |
-| Oil | 255 | 3 | 16 | 1.2% | Ignites readily and continues flowing while burning |
-| Plant | 180 | 4 | 10 | 0.8% | Stops growth while burning |
-| Gunpowder | 255 | 255 | 80 | 2% | Converts to Fire and emits a radius-5 heat/pressure explosion |
+| Wood | 255 | 3 | 600 | 1.2% | Burns away after about 85 updates if uninterrupted |
+| Oil | 255 | 3 | 600 | 1.2% | Ignites readily and continues flowing while burning |
+| Plant | 180 | 4 | 600 | 0.8% | Stops growth while burning |
+| Gunpowder | 255 | 255 | 1,500 | 2% | Converts to Fire and emits a radius-5 heat/pressure explosion |
 
 There is no Fire + Wood ignition rule and no Wood + Wood spread rule. Fire is a hot rising cell;
 Wood ignites only if conduction raises its temperature enough while it is dry. Gunpowder uses
@@ -117,11 +118,12 @@ cell.
 | Movement, combustion, lifetimes, and charge | 60 Hz |
 | Temperature conduction, phase evaluation, and ignition | 30 Hz |
 | Moisture absorption, diffusion, and evaporation | 10 Hz |
-| Ambient air cooling | Proportional when far from 20°C; staggered one-degree remainder near ambient |
+| Ambient air cooling | 8% of air-to-room energy difference per thermal pass |
 
-Temperature uses a reusable integer delta buffer so a conduction pass does not depend on scan
-direction. Material, lifetime/growth/charge, status, temperature, moisture, fuel, liquid mass,
-and latent progress live in separate typed-array channels and travel with moving particles.
+Temperature uses a reusable energy-delta buffer so a conduction pass does not depend on scan
+direction. Equal and opposite pair transfers conserve energy, including a fractional remainder
+carried with moving particles. Material, lifetime/growth/charge, status, temperature, moisture,
+fuel, liquid mass, and latent progress remain separate typed-array channels.
 
 Electricity remains on the earlier single-path Charged implementation. Reworking Spark and
 conductive-network propagation is intentionally outside this revision.
