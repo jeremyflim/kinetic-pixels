@@ -22,6 +22,14 @@ describe('192 × 180 simulation tick', () => {
   water.material.fill(MaterialId.Water, 0, water.material.length / 2)
   bench('Water spread', () => stepWorld(water))
 
+  const mixture = createWorld(0xabc123, false)
+  for (let index = 0; index < mixture.material.length / 2; index += 1) {
+    const materialId = index % 2 === 0 ? MaterialId.Water : MaterialId.Alcohol
+    mixture.material[index] = materialId
+    initializeTransientState(mixture, index, materialId)
+  }
+  bench('Water and Alcohol mixing', () => stepWorld(mixture))
+
   const lava = filled(MaterialId.Lava)
   lava.temperature.fill(MATERIAL_PROPERTIES[MaterialId.Lava].initialTemperature)
   bench('fully occupied Lava heat', () => stepWorld(lava))

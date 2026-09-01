@@ -2,7 +2,7 @@ import { Activity, Atom, Battery, Bomb, Box, Circle, CirclePlay, Cloud, Cog, Dro
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MemoryCardDialog } from './MemoryCardDialog'
 import { AMBIENT_TEMPERATURE, MAXIMUM_ROOM_TEMPERATURE, MINIMUM_ROOM_TEMPERATURE } from './simulation/constants'
-import { MATERIAL_BY_ID, MaterialId, PAINTABLE_MATERIALS, StatusFlag } from './simulation/materials'
+import { isAqueousLiquid, MATERIAL_BY_ID, MaterialId, PAINTABLE_MATERIALS, solutionConcentration, StatusFlag } from './simulation/materials'
 import { GRID_HEIGHT, GRID_WIDTH, type CellInspection, type Snapshot } from './simulation/types'
 
 const ICONS: Record<string, typeof Sparkles> = {
@@ -603,6 +603,13 @@ export function App() {
                       <dt>Thermal mass</dt><dd>{inspectedProperties.heatCapacity} units/K</dd>
                       <dt>Moisture</dt><dd>{inspection.moisture} / {inspectedProperties.moistureCapacity}</dd>
                       <dt>Fuel</dt><dd>{inspection.fuel} / {inspectedProperties.fuel}</dd>
+                      {isAqueousLiquid(inspection.materialId) && inspection.materialId !== MaterialId.Water && (
+                        <><dt>Solution strength</dt><dd>{Math.round(solutionConcentration(inspection.materialId, inspection.state) / 255 * 100)}%</dd></>
+                      )}
+                      <dt>Burn rate</dt><dd>{inspectedProperties.fuel > 0 ? `${inspectedProperties.burnRate} fuel/tick` : '—'}</dd>
+                      <dt>Combustion energy</dt><dd>{inspectedProperties.fuel > 0 ? inspectedProperties.combustionHeat : '—'}</dd>
+                      <dt>Heat output</dt><dd>{inspectedProperties.heatEmission || '—'}</dd>
+                      <dt>Ash yield</dt><dd>{inspectedProperties.ashYield > 0 ? `${Math.round(inspectedProperties.ashYield * 100)}%` : '—'}</dd>
                       <dt>Liquid mass</dt><dd>{inspection.liquidMass}</dd>
                       <dt>Phase progress</dt><dd>{inspection.phaseProgress}</dd>
                       <dt>Ignition</dt><dd>{inspectedProperties.ignitionTemperature === null ? '—' : `${inspectedProperties.ignitionTemperature} °C`}</dd>

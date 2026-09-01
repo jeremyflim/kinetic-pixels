@@ -14,8 +14,10 @@ import {
   applyExplosion,
   initializeTransientState,
   reactMaterialPair,
+  solutionConcentration,
   StatusFlag,
 } from './materials'
+import { updatePhysicalWorld } from './physics'
 import { cellColor } from './render'
 import { bytesToBase64, parseSave, serializeSnapshot } from './serialization'
 import { CELL_COUNT } from './types'
@@ -67,9 +69,15 @@ describe('material model', () => {
       expect(properties.viscosity).toBeLessThanOrEqual(1)
       expect(properties.dispersion).toBeGreaterThanOrEqual(0)
       expect(properties.dispersion).toBeLessThanOrEqual(1)
+      expect(properties.ashYield).toBeGreaterThanOrEqual(0)
+      expect(properties.ashYield).toBeLessThanOrEqual(1)
     }
-    expect(MATERIAL_REACTIONS.length).toBe(9)
-    expect(MATERIAL_REACTIONS.filter((reaction) => !reaction.materials.includes(MaterialId.Acid))).toHaveLength(3)
+    expect(MATERIAL_REACTIONS.length).toBe(10)
+    expect(MATERIAL_REACTIONS.filter((reaction) => !reaction.materials.includes(MaterialId.Acid))).toHaveLength(5)
+    for (const materialId of [MaterialId.Wood, MaterialId.Plant, MaterialId.Coal, MaterialId.Rubber]) {
+      expect(MATERIAL_PROPERTIES[materialId].ashYield).toBeGreaterThan(0)
+      expect(MATERIAL_PROPERTIES[materialId].ashYield).toBeLessThan(1)
+    }
     expect(reactMaterialPair(createWorld(1, false, 2, 1), 0, 1)).toBe(false)
   })
 
@@ -572,6 +580,26 @@ describe('specific chemistry and electrical networks', () => {
     expect(effectiveElectricalConductivity(world, saltWater)).toBeGreaterThan(effectiveElectricalConductivity(world, water))
   })
 
+  it('mixes Water with aqueous solutions while conserving Alcohol and weakening diluted brine', () => {
+    const alcoholWorld = createWorld(320, false, 2, 1)
+    place(alcoholWorld, 0, 0, MaterialId.Water)
+    place(alcoholWorld, 1, 0, MaterialId.Alcohol)
+    stepWorld(alcoholWorld)
+    expect([...alcoholWorld.material]).toEqual([MaterialId.Alcohol, MaterialId.Alcohol])
+    expect(solutionConcentration(alcoholWorld.material[0], alcoholWorld.state[0])
+      + solutionConcentration(alcoholWorld.material[1], alcoholWorld.state[1])).toBe(255)
+    expect(alcoholWorld.fuel[0] + alcoholWorld.fuel[1]).toBe(255)
+
+    const brineWorld = createWorld(321, false, 2, 1)
+    const water = place(brineWorld, 0, 0, MaterialId.Water)
+    const brine = place(brineWorld, 1, 0, MaterialId.SaltWater)
+    const fullConductivity = effectiveElectricalConductivity(brineWorld, brine)
+    stepWorld(brineWorld)
+    expect([...brineWorld.material]).toEqual([MaterialId.SaltWater, MaterialId.SaltWater])
+    expect(effectiveElectricalConductivity(brineWorld, water)).toBeLessThan(fullConductivity)
+    expect(effectiveElectricalConductivity(brineWorld, water)).toBeGreaterThan(0)
+  })
+
   it('uses electrical sensitivity to ignite gunpowder through a wire', () => {
     const world = createWorld(33, false, 5, 1)
     place(world, 0, 0, MaterialId.Battery)
@@ -602,6 +630,54 @@ describe('specific chemistry and electrical networks', () => {
     expect(sodiumWorld.material[secondWater]).toBe(MaterialId.Hydrogen)
     expect(sodiumWorld.temperature[sodium]).toBe(900)
     expect(sodiumWorld.temperature[secondWater]).toBe(500)
+
+    const alcoholWorld = createWorld(351, false, 2, 1)
+    const secondSodium = place(alcoholWorld, 0, 0, MaterialId.Sodium)
+    const alcohol = place(alcoholWorld, 1, 0, MaterialId.Alcohol)
+    for (let attempt = 0; attempt < 800 && alcoholWorld.material[secondSodium] === MaterialId.Sodium; attempt += 1) reactMaterialPair(alcoholWorld, secondSodium, alcohol)
+    expect(alcoholWorld.material[secondSodium]).toBe(MaterialId.Fire)
+    expect(alcoholWorld.material[alcohol]).toBe(MaterialId.Hydrogen)
+
+    const iceWorld = createWorld(352, false, 2, 1)
+    const secondSalt = place(iceWorld, 0, 0, MaterialId.Salt)
+    const ice = place(iceWorld, 1, 0, MaterialId.Ice)
+    for (let attempt = 0; attempt < 800 && iceWorld.material[secondSalt] === MaterialId.Salt; attempt += 1) reactMaterialPair(iceWorld, secondSalt, ice)
+    expect([...iceWorld.material]).toEqual([MaterialId.SaltWater, MaterialId.SaltWater])
+  })
+
+  it('releases Hydrogen when Acid corrodes Metal instead of silently deleting the Metal', () => {
+    const world = createWorld(353, false, 2, 1)
+    const acid = place(world, 0, 0, MaterialId.Acid)
+    const metal = place(world, 1, 0, MaterialId.Metal)
+    for (let attempt = 0; attempt < 2_000 && world.material[metal] === MaterialId.Metal; attempt += 1) reactMaterialPair(world, acid, metal)
+    expect(world.material[acid]).toBe(MaterialId.SaltWater)
+    expect(world.material[metal]).toBe(MaterialId.Hydrogen)
+  })
+
+  it('flashes Water touching burning Oil into Steam without extinguishing the Oil', () => {
+    const world = createWorld(354, false, 2, 1)
+    const oil = place(world, 0, 0, MaterialId.Oil, 220)
+    const water = place(world, 1, 0, MaterialId.Water)
+    world.status[oil] |= StatusFlag.Burning
+    stepWorld(world)
+    expect(world.material[water]).toBe(MaterialId.Steam)
+    expect(world.status[oil] & StatusFlag.Burning).toBe(StatusFlag.Burning)
+  })
+
+  it('leaves Salt residue from only part of a boiling Salt Water field', () => {
+    const world = createWorld(355, false, 80, 2)
+    const transition = MATERIAL_PROPERTIES[MaterialId.SaltWater].phaseTransitions[0]
+    for (let x = 0; x < world.width; x += 2) {
+      const brine = place(world, x, 1, MaterialId.SaltWater, 120)
+      world.phaseProgress[brine] = transition.latentHeat - 1
+    }
+    world.tick = 2
+    updatePhysicalWorld(world)
+    const salt = world.material.reduce((count, material) => count + Number(material === MaterialId.Salt), 0)
+    const steam = world.material.reduce((count, material) => count + Number(material === MaterialId.Steam), 0)
+    expect(salt).toBeGreaterThan(0)
+    expect(salt).toBeLessThan(40)
+    expect(steam).toBeGreaterThan(0)
   })
 
   it('reuses shared combustion residue, extinguishing, and plant nutrition behavior', () => {
@@ -609,7 +685,7 @@ describe('specific chemistry and electrical networks', () => {
     const coal = place(coalWorld, 0, 0, MaterialId.Coal, 500)
     coalWorld.status[coal] |= StatusFlag.Burning
     step(coalWorld, 260)
-    expect(coalWorld.material[coal]).toBe(MaterialId.Ash)
+    expect([MaterialId.Empty, MaterialId.Ash]).toContain(coalWorld.material[coal])
 
     const foamWorld = createWorld(37, false, 2, 1)
     place(foamWorld, 0, 0, MaterialId.Foam)
@@ -622,6 +698,29 @@ describe('specific chemistry and electrical networks', () => {
     place(garden, 1, 1, MaterialId.Plant)
     step(garden, 130)
     expect([...garden.material].filter((material) => material === MaterialId.Plant).length).toBeGreaterThan(1)
+  })
+
+  it('leaves sparse, material-specific Ash instead of replacing every burned cell one-for-one', () => {
+    const world = createWorld(361, false, 200, 1)
+    for (let x = 0; x < world.width; x += 1) {
+      const coal = place(world, x, 0, MaterialId.Coal, 500)
+      world.fuel[coal] = 1
+      world.status[coal] |= StatusFlag.Burning
+    }
+    stepWorld(world)
+    const ash = world.material.reduce((count, material) => count + Number(material === MaterialId.Ash), 0)
+    expect(ash).toBeGreaterThan(60)
+    expect(ash).toBeLessThan(140)
+    expect(world.material.reduce((count, material) => count + Number(material === MaterialId.Empty), 0)).toBe(200 - ash)
+  })
+
+  it('renders burning Coal as embers rather than reusing Wood flame colors', () => {
+    const world = createWorld(362, false, 2, 1)
+    const wood = place(world, 0, 0, MaterialId.Wood, 500)
+    const coal = place(world, 1, 0, MaterialId.Coal, 500)
+    world.status[wood] |= StatusFlag.Burning
+    world.status[coal] |= StatusFlag.Burning
+    expect(cellColor(world, coal)).not.toEqual(cellColor(world, wood))
   })
 
   it('uses viscosity for liquid spread and dispersion for lateral gas movement', () => {
@@ -738,6 +837,9 @@ describe('world commands and persistence', () => {
     const world = createWorld(13)
     world.tick = 12_345
     world.charge[0] = 213
+    const solution = place(world, 1, 0, MaterialId.Alcohol)
+    world.state[solution] = 123
+    world.fuel[solution] = 123
     const serialized = serializeSnapshot(snapshotWorld(world), 'FIRE TEST', '2026-08-31T00:00:00.000Z')
     const parsed = parseSave(serialized)
     expect(parsed.snapshot).toEqual(snapshotWorld(world))

@@ -12,10 +12,13 @@ import {
   MaterialId,
   type MaterialIdValue,
   StatusFlag,
+  solutionConcentration,
+  solutionStrength,
   emptyCell,
   setMaterialCell,
 } from './materials'
-import type { MaterialProperties, World } from './types'
+import { chance } from './random'
+import type { MaterialProperties, PhaseTransition, World } from './types'
 
 function properties(world: World, index: number): MaterialProperties {
   return MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
@@ -46,6 +49,52 @@ function exchangeTemperature(world: World, first: number, second: number): void 
   const energy = Math.round(Math.sign(difference) * Math.min(requestedEnergy, equilibriumEnergy * MAXIMUM_PAIR_EXCHANGE_FRACTION))
   world.temperatureDelta[first] -= energy
   world.temperatureDelta[second] += energy
+}
+
+function activePhaseTransition(world: World, index: number, materialProperties: MaterialProperties): PhaseTransition | undefined {
+  const materialId = world.material[index] as MaterialIdValue
+  let transitions = materialProperties.phaseTransitions
+  if (materialId === MaterialId.Alcohol) {
+    const concentration = solutionConcentration(materialId, world.state[index]) / 255
+    const alcoholTransition = materialProperties.phaseTransitions[0]
+    const waterTransition = MATERIAL_PROPERTIES[MaterialId.Water].phaseTransitions[0]
+    transitions = [{
+      direction: 'above',
+      temperature: Math.round(100 - concentration * 22),
+      product: concentration >= 0.5 ? MaterialId.AlcoholVapor : MaterialId.Steam,
+      latentHeat: Math.round(waterTransition.latentHeat * (1 - concentration) + alcoholTransition.latentHeat * concentration),
+    }]
+  } else if (materialId === MaterialId.SaltWater) {
+    const strength = solutionStrength(materialId, world.state[index])
+    transitions = materialProperties.phaseTransitions.map((transition) => ({
+      ...transition,
+      temperature: transition.direction === 'above' ? Math.round(100 + strength * 3) : Math.round(-strength * 4),
+    }))
+  } else if (materialId === MaterialId.Acid) {
+    const strength = solutionStrength(materialId, world.state[index])
+    transitions = materialProperties.phaseTransitions.map((transition) => ({ ...transition, temperature: Math.round(100 + strength * 8) }))
+  }
+  return transitions.find((candidate) => candidate.direction === 'above'
+    ? world.temperature[index] >= candidate.temperature
+    : world.temperature[index] <= candidate.temperature)
+}
+
+function completePhaseTransition(world: World, index: number, transition: PhaseTransition, retainedTemperature: number): void {
+  if (world.material[index] === MaterialId.SaltWater && transition.direction === 'above' && transition.product === MaterialId.Steam) {
+    const concentration = solutionConcentration(MaterialId.SaltWater, world.state[index])
+    const x = index % world.width
+    const y = Math.floor(index / world.width)
+    const vaporTarget = [[x, y - 1], [x - 1, y - 1], [x + 1, y - 1], [x - 1, y], [x + 1, y]]
+      .find(([targetX, targetY]) => targetX >= 0 && targetX < world.width && targetY >= 0 && targetY < world.height
+        && world.material[targetY * world.width + targetX] === MaterialId.Empty)
+    if (vaporTarget && chance(world, concentration / 512)) {
+      const target = vaporTarget[1] * world.width + vaporTarget[0]
+      setMaterialCell(world, target, MaterialId.Steam, retainedTemperature)
+      setMaterialCell(world, index, MaterialId.Salt, transition.temperature)
+      return
+    }
+  }
+  setMaterialCell(world, index, transition.product as MaterialIdValue, retainedTemperature)
 }
 
 function conductTemperature(world: World): void {
@@ -82,9 +131,7 @@ function updatePhaseAndIgnition(world: World): void {
       continue
     }
     let materialProperties = MATERIAL_PROPERTIES[materialId]
-    const transition = materialProperties.phaseTransitions.find((candidate) => candidate.direction === 'above'
-      ? world.temperature[index] >= candidate.temperature
-      : world.temperature[index] <= candidate.temperature)
+    const transition = activePhaseTransition(world, index, materialProperties)
     if (transition) {
       const distance = Math.abs(world.temperature[index] - transition.temperature)
       const availableEnergy = distance * materialProperties.heatCapacity
@@ -97,7 +144,7 @@ function updatePhaseAndIgnition(world: World): void {
         const productProperties = MATERIAL_PROPERTIES[transition.product as MaterialIdValue]
         const remainingEnergy = availableEnergy - absorbedEnergy
         const retainedTemperature = transition.temperature + direction * Math.trunc(remainingEnergy / productProperties.heatCapacity)
-        setMaterialCell(world, index, transition.product as MaterialIdValue, retainedTemperature)
+        completePhaseTransition(world, index, transition, retainedTemperature)
         materialProperties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
       }
     } else {

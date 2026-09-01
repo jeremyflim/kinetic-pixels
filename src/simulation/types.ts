@@ -75,6 +75,7 @@ export interface MaterialProperties {
   heatEmission: number
   smokeYield: number
   burnProduct: number | null
+  ashYield: number
   extinguishingPower: number
   plantNutrition: number
   explosionRadius: number

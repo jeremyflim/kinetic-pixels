@@ -106,7 +106,8 @@ Material behavior is split between shared property-driven systems and a sparse p
 - Phase thresholds accumulate latent progress rather than converting immediately.
 - Porous materials absorb and diffuse finite Water mass; evaporation consumes heat.
 - Combustible cells ignite from temperature and dryness, consume fuel, and feed energy back into
-  the shared thermal field; configured fuels can leave Ash rather than simply disappearing.
+  the shared thermal field. Ash-producing fuels use material-specific yields, leaving sparse
+  residue instead of replacing every burned pixel one-for-one.
 - A separate charge field carries visible current fronts through conductive networks at four cells
   per tick without distance loss. Battery launches one pulse every 30 ticks, Metal carries it,
   Salt Water creates conductive liquid paths, Rubber insulates, and saturated porous materials
@@ -115,6 +116,9 @@ Material behavior is split between shared property-driven systems and a sparse p
   and Sodium reacting with water—not for general heat, electricity, combustion, or movement.
 - Liquid spread is controlled by a declared viscosity value. Gases declare lateral dispersion,
   allowing Smoke, Steam, Hydrogen, and Alcohol Vapor to spread instead of parking at the ceiling.
+- Water dilutes adjacent Alcohol, Acid, and Salt Water through a shared concentration model.
+  Concentration changes Alcohol fuel and boiling behavior, Acid reaction strength, Salt Water
+  conductivity, solution color, and the live inspector readout.
 
 Water retains its high relative heat capacity, while its latent boiling duration is deliberately
 gameplay-scaled. Steam has no arbitrary deletion timer: warm vapor persists, cooled vapor
@@ -147,9 +151,9 @@ Playwright verifies the user-visible contract rather than internal React state.
 
 The current suite contains:
 
-- **51 Vitest tests** covering material behavior, electrical networks, flow properties, Source,
-  heat and phase transitions, moisture, chemistry, combustion, explosions, deterministic ordering,
-  clearing, save migration, and serialization.
+- **57 Vitest tests** covering material behavior, electrical networks, aqueous dilution, flow
+  properties, Source, heat and phase transitions, moisture, chemistry, sparse combustion residue,
+  explosions, deterministic ordering, clearing, save migration, and serialization.
 - **28 Playwright tests** covering pointer and keyboard flows, Monitor states, time rate, paused
   editing, long strokes, saves, import/export validation, focus behavior, responsive geometry,
   and visual regression snapshots at 1024 × 576, 1366 × 768, and 1920 × 1080.
@@ -197,12 +201,13 @@ Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1
 
 | 192 × 180 scenario | Mean tick | Throughput |
 | --- | ---: | ---: |
-| Fully occupied stationary grid | 3.13 ms | 319.51 ticks/s |
-| Falling Sand | 7.76 ms | 128.84 ticks/s |
-| Water spread | 4.93 ms | 202.73 ticks/s |
-| Fully occupied Lava / thermal field | 11.34 ms | 88.17 ticks/s |
-| Current propagating through Metal | 6.18 ms | 161.94 ticks/s |
-| Burning Wood / Fire / Smoke | 8.41 ms | 118.94 ticks/s |
+| Fully occupied stationary grid | 3.73 ms | 268.39 ticks/s |
+| Falling Sand | 7.88 ms | 126.82 ticks/s |
+| Water spread | 4.79 ms | 208.69 ticks/s |
+| Water and Alcohol mixing | 9.10 ms | 109.85 ticks/s |
+| Fully occupied Lava / thermal field | 13.97 ms | 71.58 ticks/s |
+| Current propagating through Metal | 6.60 ms | 151.47 ticks/s |
+| Burning Wood / Fire / Smoke | 9.45 ms | 105.79 ticks/s |
 
 These figures are descriptive rather than CI thresholds because shared machines and background
 load introduce timing noise. Electrical passes are skipped when no source or traveling current exists.

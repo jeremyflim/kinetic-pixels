@@ -1,4 +1,4 @@
-import { MATERIALS, MATERIAL_PROPERTIES, MaterialId, type MaterialIdValue, StatusFlag } from './materials'
+import { MATERIALS, MATERIAL_PROPERTIES, MaterialId, type MaterialIdValue, solutionStrength, StatusFlag } from './materials'
 import { AMBIENT_TEMPERATURE, MAXIMUM_TEMPERATURE, MINIMUM_TEMPERATURE } from './constants'
 import type { World } from './types'
 
@@ -13,6 +13,13 @@ const BURNING_WOOD_RGB = [
   [255, 71, 127],
   [104, 52, 43],
   [48, 37, 48],
+] as const
+
+const SMOLDERING_COAL_RGB = [
+  [42, 34, 38],
+  [92, 43, 38],
+  [184, 62, 37],
+  [255, 135, 45],
 ] as const
 
 const VISIBLY_HEATED = new Set<number>([
@@ -55,11 +62,19 @@ export function cellColor(world: World, index: number): readonly [number, number
   const cellState = world.state[index]
   const cellStatus = world.status[index]
   const isBurning = Boolean(cellStatus & StatusFlag.Burning)
-  const colors = isBurning ? BURNING_WOOD_RGB : (RGB[materialId] ?? RGB[MaterialId.Empty])
+  const colors = isBurning && materialId !== MaterialId.Coal ? BURNING_WOOD_RGB : (RGB[materialId] ?? RGB[MaterialId.Empty])
   const x = index % world.width
   const y = Math.floor(index / world.width)
   let color: readonly [number, number, number] = colors[colorIndex(materialId, x, y, cellState, world.seed, colors.length)]
-  if (isBurning) {
+  if (materialId === MaterialId.Alcohol || materialId === MaterialId.Acid || materialId === MaterialId.SaltWater) {
+    const strength = solutionStrength(materialId, cellState)
+    const waterColors = RGB[MaterialId.Water]
+    const waterColor = waterColors[colorIndex(MaterialId.Water, x, y, cellState, world.seed, waterColors.length)]
+    color = blendColor(waterColor, color, strength)
+  }
+  if (isBurning && materialId === MaterialId.Coal) {
+    color = SMOLDERING_COAL_RGB[colorIndex(materialId, x, y, cellState ^ Math.floor(world.tick / 4), world.seed, SMOLDERING_COAL_RGB.length)]
+  } else if (isBurning) {
     const maximumFuel = Math.max(1, MATERIAL_PROPERTIES[materialId as MaterialIdValue].fuel)
     const progress = maximumFuel - world.fuel[index]
     const burnRatio = progress / maximumFuel

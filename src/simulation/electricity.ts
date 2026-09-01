@@ -1,4 +1,4 @@
-import { addTemperature, MATERIAL_PROPERTIES, type MaterialIdValue, StatusFlag } from './materials'
+import { addTemperature, MATERIAL_PROPERTIES, MaterialId, type MaterialIdValue, solutionStrength, StatusFlag } from './materials'
 import type { MaterialProperties, World } from './types'
 
 const CHARGE_STRENGTH = 255
@@ -8,10 +8,12 @@ const CURRENT_TRAIL_STRENGTH = 170
 const CURRENT_TRAIL_DECAY = 85
 
 export function effectiveElectricalConductivity(world: World, index: number): number {
-  const properties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
+  const materialId = world.material[index] as MaterialIdValue
+  const properties = MATERIAL_PROPERTIES[materialId]
   if (properties.electricalConductivity <= 0 && properties.moistureCapacity <= 0) return 0
   const saturation = properties.moistureCapacity > 0 ? world.moisture[index] / properties.moistureCapacity : 0
-  return Math.min(255, Math.round(properties.electricalConductivity + saturation * 150))
+  const solutionScale = materialId === MaterialId.SaltWater ? solutionStrength(materialId, world.state[index]) : 1
+  return Math.min(255, Math.round(properties.electricalConductivity * solutionScale + saturation * 150))
 }
 
 export function isChargeSourceActive(properties: MaterialProperties, tick: number): boolean {

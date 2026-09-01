@@ -59,16 +59,27 @@ Water mass is spent as porous cells become wet. Evaporation consumes temperature
 
 Material identity answers what a cell is. `state` stores material-local lifetime or growth;
 `status` stores `Burning` and the display-facing `Charged` flag; separate arrays store charge, temperature, moisture,
-remaining fuel, liquid mass, and latent phase progress. The legacy `Wet` flag exists only for
-save migration and is derived from moisture during simulation.
+remaining fuel, liquid mass, and latent phase progress. For aqueous solution materials, the low
+byte of the existing identity-specific `state` channel stores normalized solute concentration;
+this preserves version-6 save compatibility. The legacy `Wet` flag exists only for save migration
+and is derived from moisture during simulation.
 
 Combustion begins from temperature and dryness, consumes fuel, and returns heat to the shared
 field. Fire and burning fuels also inject fixed local energy into neighboring cells; target heat
 capacity therefore still determines the resulting temperature rise. A material can configure a
-residue, allowing Wood, Plant, Coal, and Rubber to leave Ash through the same combustion path.
+residue and an independent yield. Wood, Plant, Coal, and Rubber therefore leave sparse Ash through
+the same combustion path instead of converting occupied space one-for-one. Burning Coal uses a
+dedicated ember palette while Wood retains the flame-and-char treatment.
 Fire-to-Wood, Wood-to-Wood, Water-to-Fire, and Lava-to-Water pair outcomes are not present.
 The sparse registry is limited to identity-specific chemistry. Plant growth remains a biological
 behavior driven by a shared nutrition property on Water, Salt Water, and Soil.
+
+Water, Alcohol, Acid, and Salt Water participate in one aqueous-solution system. Water carries zero
+solute; adjacent compatible cells equalize concentration while conserving Alcohol fuel. Material
+identity records the dominant solute, so no diluted variants enter the palette. Concentration
+controls Alcohol flammability and boiling product, Acid corrosion rate, Salt Water phase thresholds
+and conductivity, and solution color. Different non-water solutes intentionally do not combine in
+one cell, keeping the state model bounded and deterministic.
 
 ## Electricity
 
@@ -139,3 +150,6 @@ Primary and government technical references:
 - [NIST selected-material thermal conductivity tables](https://nvlpubs.nist.gov/nistpubs/legacy/nsrds/nbsnsrds8.pdf)
 - [USDA Wood Handbook: density, heat capacity, and conductivity](https://www.fpl.fs.usda.gov/documnts/fplgtr/fplgtr282/fpl_gtr282.pdf)
 - [NIH PubChem: hydrochloric-acid solution density and 20.22% azeotrope boiling data](https://pubchem.ncbi.nlm.nih.gov/compound/Hydrochloric-Acid)
+- [NOAA CAMEO: hydrochloric acid produces hydrogen with many metals](https://m.cameochemicals.noaa.gov/chemical/3598)
+- [NIST ThermoML: concentration-dependent ethanol/water vapor-liquid equilibrium](https://trc.nist.gov/ThermoML/10.1016/j.fluid.2011.06.009.html)
+- [USGS: dissolved road salt lowers water's freezing point](https://pubs.usgs.gov/wri/2001/wri01_4260/)

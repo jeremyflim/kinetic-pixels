@@ -41,7 +41,7 @@ const inertProperties = {
   sparkSensitivity: 0, indestructible: false, corrosiveness: 0,
   initialTemperature: AMBIENT_TEMPERATURE, ...thermal(1.2, 1_005, 0.026), blastResistance: 0,
   phaseTransitions: [], ignitionTemperature: null, fuel: 0, burnRate: 0,
-  combustionHeat: 0, heatEmission: 0, smokeYield: 0, burnProduct: null, extinguishingPower: 0, plantNutrition: 0,
+  combustionHeat: 0, heatEmission: 0, smokeYield: 0, burnProduct: null, ashYield: 0, extinguishingPower: 0, plantNutrition: 0,
   explosionRadius: 0, explosionHeat: 0, explosionPressure: 0,
   moistureCapacity: 0, moistureAbsorption: 0, moistureDiffusivity: 0,
 } as const
@@ -72,7 +72,7 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 8, hardness: 0.45, friction: 0.8,
     ...thermal(500, 1_300, 0.12), blastResistance: 0.48,
     ignitionTemperature: 160, fuel: 255, burnRate: 3, combustionHeat: 600, heatEmission: 70, smokeYield: 0.012,
-    burnProduct: MaterialId.Ash,
+    burnProduct: MaterialId.Ash, ashYield: 0.3,
     moistureCapacity: 180, moistureAbsorption: 32, moistureDiffusivity: 24,
   },
   [MaterialId.Fire]: {
@@ -94,7 +94,7 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 4, hardness: 0.1, friction: 0.75,
     ...thermal(700, 3_500, 0.2), blastResistance: 0.16,
     ignitionTemperature: 180, fuel: 180, burnRate: 4, combustionHeat: 600, heatEmission: 60, smokeYield: 0.008,
-    burnProduct: MaterialId.Ash,
+    burnProduct: MaterialId.Ash, ashYield: 0.18,
     moistureCapacity: 220, moistureAbsorption: 30, moistureDiffusivity: 28,
   },
   [MaterialId.Acid]: {
@@ -155,7 +155,7 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
     ...inertProperties, phase: 'solid', mobility: 'powder', density: 5.8, hardness: 0.35, friction: 0.76,
     ...thermal(1_350, 1_260, 0.25), blastResistance: 0.3,
     ignitionTemperature: 260, fuel: 255, burnRate: 1, combustionHeat: 1_050, heatEmission: 105, smokeYield: 0.018,
-    burnProduct: MaterialId.Ash, sparkSensitivity: 80,
+    burnProduct: MaterialId.Ash, ashYield: 0.5, sparkSensitivity: 80,
   },
   [MaterialId.Ash]: {
     ...inertProperties, phase: 'solid', mobility: 'powder', density: 2.8, hardness: 0.05, friction: 0.82,
@@ -165,7 +165,7 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 7, hardness: 0.35, friction: 0.96,
     ...thermal(1_100, 1_800, 0.14), blastResistance: 0.42,
     ignitionTemperature: 300, fuel: 240, burnRate: 2, combustionHeat: 720, heatEmission: 65, smokeYield: 0.025,
-    burnProduct: MaterialId.Ash,
+    burnProduct: MaterialId.Ash, ashYield: 0.24,
   },
   [MaterialId.Copper]: {
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 13, hardness: 0.75, friction: 0.98,
@@ -219,6 +219,28 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 255, hardness: 1, friction: 1,
     indestructible: true, ...thermal(7_800, 500, 18), blastResistance: 255,
   },
+}
+
+const DEFAULT_SOLUTION_CONCENTRATION: Readonly<Partial<Record<MaterialIdValue, number>>> = {
+  [MaterialId.Alcohol]: 255,
+  [MaterialId.Acid]: 255,
+  [MaterialId.SaltWater]: 160,
+}
+
+export function isAqueousLiquid(materialId: number): materialId is MaterialIdValue {
+  return materialId === MaterialId.Water || DEFAULT_SOLUTION_CONCENTRATION[materialId as MaterialIdValue] !== undefined
+}
+
+export function solutionConcentration(materialId: number, state: number): number {
+  if (materialId === MaterialId.Water) return 0
+  const authored = DEFAULT_SOLUTION_CONCENTRATION[materialId as MaterialIdValue]
+  return authored === undefined ? 0 : Math.max(1, Math.min(255, state || authored))
+}
+
+export function solutionStrength(materialId: number, state: number): number {
+  const authored = DEFAULT_SOLUTION_CONCENTRATION[materialId as MaterialIdValue]
+  if (authored === undefined) return materialId === MaterialId.Water ? 0 : 1
+  return Math.min(1, solutionConcentration(materialId, state) / authored)
 }
 
 function at(world: World, x: number, y: number): number { return y * world.width + x }
@@ -314,7 +336,7 @@ function neighbors(world: World, x: number, y: number): number[] {
   return result
 }
 
-interface ReactionSideEffect { product?: MaterialIdValue; temperature?: number }
+interface ReactionSideEffect { product?: MaterialIdValue; temperature?: number; concentration?: number }
 export interface MaterialReaction {
   materials: readonly [MaterialIdValue, MaterialIdValue]
   initiator: MaterialIdValue | readonly MaterialIdValue[]
@@ -329,13 +351,14 @@ export interface MaterialReaction {
 export const MATERIAL_REACTIONS: readonly MaterialReaction[] = [
   { materials: [MaterialId.Acid, MaterialId.Plant], initiator: MaterialId.Acid, chancePerSecond: 0.85, scaleByCorrosion: true, b: { product: MaterialId.Empty } },
   { materials: [MaterialId.Acid, MaterialId.Wood], initiator: MaterialId.Acid, chancePerSecond: 0.15, scaleByCorrosion: true, b: { product: MaterialId.Empty } },
-  { materials: [MaterialId.Acid, MaterialId.Metal], initiator: MaterialId.Acid, chancePerSecond: 0.45, scaleByCorrosion: true, b: { product: MaterialId.Empty } },
-  { materials: [MaterialId.Acid, MaterialId.Water], initiator: MaterialId.Acid, chancePerSecond: 0.3, a: { product: MaterialId.Water } },
-  { materials: [MaterialId.Acid, MaterialId.Copper], initiator: MaterialId.Acid, chancePerSecond: 0.28, scaleByCorrosion: true, b: { product: MaterialId.Empty } },
-  { materials: [MaterialId.Salt, MaterialId.Water], initiator: MaterialId.Salt, chancePerSecond: 0.95, a: { product: MaterialId.SaltWater }, b: { product: MaterialId.SaltWater } },
+  { materials: [MaterialId.Acid, MaterialId.Metal], initiator: MaterialId.Acid, chancePerSecond: 0.45, scaleByCorrosion: true, a: { product: MaterialId.SaltWater, concentration: 80 }, b: { product: MaterialId.Hydrogen, temperature: 120 } },
+  { materials: [MaterialId.Acid, MaterialId.Copper], initiator: MaterialId.Acid, chancePerSecond: 0.28, scaleByCorrosion: true, a: { product: MaterialId.SaltWater, concentration: 80 }, b: { product: MaterialId.Hydrogen, temperature: 120 } },
+  { materials: [MaterialId.Salt, MaterialId.Water], initiator: MaterialId.Salt, chancePerSecond: 0.95, a: { product: MaterialId.SaltWater, concentration: 80 }, b: { product: MaterialId.SaltWater, concentration: 80 } },
+  { materials: [MaterialId.Salt, MaterialId.Ice], initiator: MaterialId.Salt, chancePerSecond: 0.9, a: { product: MaterialId.SaltWater, temperature: -2, concentration: 80 }, b: { product: MaterialId.SaltWater, temperature: -2, concentration: 80 } },
   { materials: [MaterialId.Sodium, MaterialId.Water], initiator: MaterialId.Sodium, chancePerSecond: 1, a: { product: MaterialId.Fire, temperature: 900 }, b: { product: MaterialId.Hydrogen, temperature: 500 } },
   { materials: [MaterialId.Sodium, MaterialId.SaltWater], initiator: MaterialId.Sodium, chancePerSecond: 1, a: { product: MaterialId.Fire, temperature: 900 }, b: { product: MaterialId.Hydrogen, temperature: 500 } },
-  { materials: [MaterialId.Sodium, MaterialId.Acid], initiator: MaterialId.Sodium, chancePerSecond: 1, a: { product: MaterialId.Fire, temperature: 900 }, b: { product: MaterialId.Smoke, temperature: 120 } },
+  { materials: [MaterialId.Sodium, MaterialId.Acid], initiator: MaterialId.Sodium, chancePerSecond: 1, a: { product: MaterialId.Fire, temperature: 900 }, b: { product: MaterialId.Hydrogen, temperature: 500 } },
+  { materials: [MaterialId.Sodium, MaterialId.Alcohol], initiator: MaterialId.Sodium, chancePerSecond: 0.7, a: { product: MaterialId.Fire, temperature: 700 }, b: { product: MaterialId.Hydrogen, temperature: 350 } },
 ]
 
 function reactionKey(first: number, second: number): number { return (Math.min(first, second) << 8) | Math.max(first, second) }
@@ -349,6 +372,7 @@ function applyReactionEffect(world: World, index: number, effect: ReactionSideEf
   if (effect?.product === undefined) return
   if (MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue].indestructible) return
   setMaterialCell(world, index, effect.product, effect.temperature ?? world.temperature[index])
+  if (effect.concentration !== undefined) world.state[index] = effect.concentration
 }
 
 export function reactMaterialPair(world: World, actorIndex: number, targetIndex: number): boolean {
@@ -368,6 +392,7 @@ export function reactMaterialPair(world: World, actorIndex: number, targetIndex:
       const bProperties = MATERIAL_PROPERTIES[world.material[bIndex] as MaterialIdValue]
       probability *= Math.max(0, Math.min(1, aProperties.corrosiveness - bProperties.hardness * 0.5))
     }
+    if (world.material[aIndex] === MaterialId.Acid) probability *= solutionStrength(MaterialId.Acid, world.state[aIndex])
     if (!chance(world, probability)) continue
     applyReactionEffect(world, aIndex, reaction.a)
     applyReactionEffect(world, bIndex, reaction.b)
@@ -425,6 +450,52 @@ function updateSource(world: World, { index, x, y }: UpdateContext): void {
     }
   }
   world.updatedAt[index] = world.tick
+}
+
+function syncSolutionFuel(world: World, index: number, fuelOverride?: number): void {
+  if (world.material[index] !== MaterialId.Alcohol) return
+  const concentration = solutionConcentration(MaterialId.Alcohol, world.state[index])
+  const maximumFuel = concentration < 52 ? 0 : Math.round(MATERIAL_PROPERTIES[MaterialId.Alcohol].fuel * concentration / 255)
+  world.fuel[index] = fuelOverride === undefined ? maximumFuel : Math.min(maximumFuel, Math.max(0, Math.round(fuelOverride)))
+  if (world.fuel[index] === 0) clearStatus(world, index, StatusFlag.Burning)
+}
+
+function setSolutionCell(world: World, index: number, solute: MaterialIdValue | null, concentration: number, fuelOverride?: number): void {
+  const nextConcentration = Math.max(0, Math.min(255, Math.round(concentration)))
+  world.material[index] = solute === null || nextConcentration === 0 ? MaterialId.Water : solute
+  world.state[index] = nextConcentration
+  world.phaseProgress[index] = 0
+  if (world.material[index] === MaterialId.Water) world.fuel[index] = 0
+  else syncSolutionFuel(world, index, fuelOverride)
+  world.updatedAt[index] = world.tick
+}
+
+function mixAqueousNeighbor(world: World, index: number, x: number, y: number): void {
+  const materialId = world.material[index] as MaterialIdValue
+  if (!isAqueousLiquid(materialId)) return
+  for (const [offsetX, offsetY] of [[0, 1], [-1, 0], [1, 0], [0, -1]] as const) {
+    const targetX = x + offsetX
+    const targetY = y + offsetY
+    if (!inBounds(world, targetX, targetY)) continue
+    const target = at(world, targetX, targetY)
+    const targetMaterial = world.material[target] as MaterialIdValue
+    if (!isAqueousLiquid(targetMaterial)) continue
+    const firstSolute = materialId === MaterialId.Water ? null : materialId
+    const secondSolute = targetMaterial === MaterialId.Water ? null : targetMaterial
+    if (firstSolute !== null && secondSolute !== null && firstSolute !== secondSolute) continue
+    const solute = firstSolute ?? secondSolute
+    if (solute === null) continue
+    const firstConcentration = solutionConcentration(materialId, world.state[index])
+    const secondConcentration = solutionConcentration(targetMaterial, world.state[target])
+    if (materialId === targetMaterial && Math.abs(firstConcentration - secondConcentration) <= 1) continue
+    const total = firstConcentration + secondConcentration
+    const totalFuel = world.fuel[index] + world.fuel[target]
+    const firstShare = Math.floor(total / 2)
+    const firstFuel = total > 0 ? Math.round(totalFuel * firstShare / total) : 0
+    setSolutionCell(world, index, solute, firstShare, firstFuel)
+    setSolutionCell(world, target, solute, total - firstShare, totalFuel - firstFuel)
+    return
+  }
 }
 
 function emitSmoke(world: World, x: number, y: number): void {
@@ -487,8 +558,7 @@ function updateCombustion(world: World, index: number, x: number, y: number, mat
   }
   const consumed = Math.min(world.fuel[index], properties.burnRate)
   if (consumed <= 0) {
-    if (properties.burnProduct === null) emptyCell(world, index)
-    else setMaterialCell(world, index, properties.burnProduct as MaterialIdValue, world.temperature[index])
+    finishCombustion(world, index, properties)
     return true
   }
   world.fuel[index] -= consumed
@@ -497,8 +567,7 @@ function updateCombustion(world: World, index: number, x: number, y: number, mat
   emitHeat(world, x, y, properties.heatEmission)
   if (chance(world, properties.smokeYield)) emitSmoke(world, x, y)
   if (world.fuel[index] === 0) {
-    if (properties.burnProduct === null) emptyCell(world, index)
-    else setMaterialCell(world, index, properties.burnProduct as MaterialIdValue, world.temperature[index])
+    finishCombustion(world, index, properties)
     return true
   }
   return false
@@ -507,6 +576,14 @@ function updateCombustion(world: World, index: number, x: number, y: number, mat
 function updateWood(world: World, context: UpdateContext): void {
   updateCombustion(world, context.index, context.x, context.y, MaterialId.Wood)
   world.updatedAt[context.index] = world.tick
+}
+
+function finishCombustion(world: World, index: number, properties: MaterialProperties): void {
+  if (properties.burnProduct === null || (properties.burnProduct === MaterialId.Ash && !chance(world, properties.ashYield))) {
+    emptyCell(world, index)
+    return
+  }
+  setMaterialCell(world, index, properties.burnProduct as MaterialIdValue, world.temperature[index])
 }
 
 function updateCombustibleSolid(world: World, context: UpdateContext, materialId: MaterialIdValue): void {
@@ -578,23 +655,44 @@ function fluidPath(world: World, x: number, y: number, direction: -1 | 1, maximu
   return path
 }
 
-function extinguishNeighbors(world: World, x: number, y: number, power: number): void {
+function extinguishNeighbors(world: World, x: number, y: number, power: number, sourceMaterial: MaterialIdValue): void {
   if (power <= 0) return
   for (const target of neighbors(world, x, y)) {
     if (world.material[target] === MaterialId.Fire && chance(world, power / 255 * 0.32)) {
       setMaterialCell(world, target, MaterialId.Smoke, Math.min(120, world.temperature[target]))
-    } else if (hasStatus(world, target, StatusFlag.Burning) && chance(world, power / 255 * 0.18)) {
+    } else if (hasStatus(world, target, StatusFlag.Burning)
+      && !((sourceMaterial === MaterialId.Water || sourceMaterial === MaterialId.SaltWater) && world.material[target] === MaterialId.Oil)
+      && chance(world, power / 255 * 0.18)) {
       clearStatus(world, target, StatusFlag.Burning)
     }
   }
+}
+
+function flashWaterAgainstHotOil(world: World, index: number, x: number, y: number, materialId: MaterialIdValue): boolean {
+  const sourceIsWater = materialId === MaterialId.Water || materialId === MaterialId.SaltWater
+  if (!sourceIsWater && materialId !== MaterialId.Oil) return false
+  for (const target of neighbors(world, x, y)) {
+    const targetMaterial = world.material[target]
+    const oil = materialId === MaterialId.Oil ? index : target
+    const water = sourceIsWater ? index : target
+    if ((sourceIsWater && targetMaterial !== MaterialId.Oil)
+      || (materialId === MaterialId.Oil && targetMaterial !== MaterialId.Water && targetMaterial !== MaterialId.SaltWater)) continue
+    if (!hasStatus(world, oil, StatusFlag.Burning) && world.temperature[oil] < 120) continue
+    setMaterialCell(world, water, MaterialId.Steam, Math.max(120, world.temperature[water]))
+    return water === index
+  }
+  return false
 }
 
 function updateFluid(world: World, context: UpdateContext, materialId: MaterialIdValue): void {
   const { index, x, y } = context
   reactWithNeighbors(world, index, x, y)
   if (world.material[index] !== materialId) return
+  mixAqueousNeighbor(world, index, x, y)
+  if (world.material[index] !== materialId) return
   const properties = MATERIAL_PROPERTIES[materialId]
-  extinguishNeighbors(world, x, y, properties.extinguishingPower)
+  if (flashWaterAgainstHotOil(world, index, x, y, materialId)) return
+  extinguishNeighbors(world, x, y, properties.extinguishingPower, materialId)
   if (properties.fuel > 0 && updateCombustion(world, index, x, y, materialId)) return
   const attempts = y < world.height - 1 ? driftingVerticalAttempts(world, x, y, 1, driftChance(materialId)) : []
   for (const [targetX, targetY] of attempts) {
@@ -742,6 +840,8 @@ export function initializeTransientState(world: World, index: number, materialId
     : initialTemperature
   world.fuel[index] = properties?.fuel ?? 0
   world.liquidMass[index] = properties?.phase === 'liquid' ? 255 : 0
+  const solutionDefault = DEFAULT_SOLUTION_CONCENTRATION[materialId as MaterialIdValue]
+  if (solutionDefault !== undefined) world.state[index] = solutionDefault
   if (properties?.chargeSource) world.electricalActive = true
   if (materialId === MaterialId.Fire) world.state[index] = randomInt(world, FIRE_LIFETIME_MIN, FIRE_LIFETIME_MAX)
   else if (materialId === MaterialId.Smoke) world.state[index] = randomInt(world, SMOKE_LIFETIME_MIN, SMOKE_LIFETIME_MAX)
