@@ -83,11 +83,12 @@ one cell, keeping the state model bounded and deterministic.
 
 ## Electricity
 
-Electricity has its own canonical `Uint8Array` charge channel plus a transient field and fixed-size
-breadth-first queue, so it never competes with lifetime, growth, or phase state. A full-strength
-current front advances four cardinal cells per 60 Hz pass, splits naturally at branches, and leaves
-a brief fading visual trail. There is intentionally no distance attenuation inside the limited
-192 × 180 play space.
+Electricity has its own canonical `Uint8Array` charge channel. Each launched pulse also owns a
+transient fixed-size breadth-first queue and visited map, so visual charge never doubles as
+propagation state and overlapping fronts cannot reflect into a permanent loop. A full-strength
+current front advances four cardinal cells per 60 Hz pass, splits naturally at branches, visits
+each connected cell once, and leaves a brief fading visual trail. There is intentionally no
+distance attenuation inside the limited 192 × 180 play space.
 
 Spark is a short-lived ambient-temperature charge source; it does not masquerade as Fire or add a
 fixed temperature increase to adjacent Water. Battery launches one traveling pulse every 30 ticks. Metal
@@ -113,7 +114,8 @@ and active heat emission at 10 Hz of simulation time. Emitted energy is batched 
 its per-second total. The worker accrues those unchanged fixed steps at `½×`, `1×`, or `2×`
 wall-clock rate. Version 6 saves serialize charge and 32-bit latent progress with the other canonical arrays.
 Versions 2–5 remain accepted; legacy burning, Wet, heat, and 16-bit phase values migrate before
-replacement. Fractional thermal remainder is transient solver state and resets at a save boundary.
+replacement. Fractional thermal remainder and per-pulse traversal history are transient solver
+state; saved full-strength fronts are conservatively relaunched when a world is restored.
 
 ## Worker protocol
 

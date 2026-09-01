@@ -1,5 +1,5 @@
 import { addTemperature, MATERIAL_PROPERTIES, MaterialId, type MaterialIdValue, solutionStrength, StatusFlag } from './materials'
-import type { MaterialProperties, World } from './types'
+import type { ElectricalWave, MaterialProperties, World } from './types'
 
 const CHARGE_STRENGTH = 255
 const CHARGE_VISIBLE_THRESHOLD = 32
@@ -22,54 +22,77 @@ export function isChargeSourceActive(properties: MaterialProperties, tick: numbe
   return tick % properties.chargePulsePeriod < properties.chargePulseDuration
 }
 
-function enqueueConductiveNeighbor(world: World, index: number, tail: number): number {
-  if (world.charge[index] > 0 || world.chargeNext[index] > 0 || effectiveElectricalConductivity(world, index) <= 0) return tail
-  world.chargeNext[index] = CHARGE_STRENGTH
-  world.electricalQueue[tail] = index
-  return tail + 1
+export function launchElectricalPulse(world: World, sources: readonly number[]): void {
+  if (sources.length === 0) return
+  const wave: ElectricalWave = {
+    queue: new Int32Array(world.material.length),
+    visited: new Uint8Array(world.material.length),
+    head: 0,
+    tail: 0,
+    layerEnd: 0,
+  }
+  for (const index of sources) {
+    if (index < 0 || index >= world.material.length || wave.visited[index] || effectiveElectricalConductivity(world, index) <= 0) continue
+    wave.visited[index] = 1
+    wave.queue[wave.tail++] = index
+  }
+  if (wave.tail === 0) return
+  wave.layerEnd = wave.tail
+  world.electricalWaves.push(wave)
+  world.electricalActive = true
+}
+
+function enqueueWaveNeighbor(world: World, wave: ElectricalWave, index: number): void {
+  if (wave.visited[index] || effectiveElectricalConductivity(world, index) <= 0) return
+  wave.visited[index] = 1
+  wave.queue[wave.tail++] = index
+}
+
+function advanceWave(world: World, wave: ElectricalWave, next: Uint8Array): boolean {
+  for (let distance = 0; distance < CURRENT_SPEED && wave.head < wave.tail; distance += 1) {
+    const layerEnd = wave.layerEnd
+    while (wave.head < layerEnd) {
+      const index = wave.queue[wave.head++]
+      if (effectiveElectricalConductivity(world, index) <= 0) continue
+      next[index] = Math.max(next[index], CURRENT_TRAIL_STRENGTH)
+      const x = index % world.width
+      const y = Math.floor(index / world.width)
+      if (x > 0) enqueueWaveNeighbor(world, wave, index - 1)
+      if (x + 1 < world.width) enqueueWaveNeighbor(world, wave, index + 1)
+      if (y > 0) enqueueWaveNeighbor(world, wave, index - world.width)
+      if (y + 1 < world.height) enqueueWaveNeighbor(world, wave, index + world.width)
+    }
+    wave.layerEnd = wave.tail
+  }
+  for (let cursor = wave.head; cursor < wave.layerEnd; cursor += 1) next[wave.queue[cursor]] = CHARGE_STRENGTH
+  return wave.head < wave.tail
 }
 
 export function updateElectricity(world: World): void {
   if (!world.electricalActive) return
   const next = world.chargeNext
   next.fill(0)
-  let head = 0
-  let tail = 0
   let hasSource = false
 
   for (let index = 0; index < world.charge.length; index += 1) {
     const charge = world.charge[index]
-    if (charge === CHARGE_STRENGTH && effectiveElectricalConductivity(world, index) > 0) {
-      next[index] = CHARGE_STRENGTH
-      world.electricalQueue[tail++] = index
-    } else if (charge > 0) {
-      next[index] = Math.max(0, charge - CURRENT_TRAIL_DECAY)
-    }
+    if (charge > 0) next[index] = Math.max(0, charge - CURRENT_TRAIL_DECAY)
   }
 
+  const activeSources: number[] = []
   for (let index = 0; index < world.material.length; index += 1) {
     const properties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
     if (properties.chargeSource <= 0) continue
     hasSource = true
     if (!isChargeSourceActive(properties, world.tick)) continue
-    if (next[index] === CHARGE_STRENGTH) continue
-    next[index] = CHARGE_STRENGTH
-    world.electricalQueue[tail++] = index
+    activeSources.push(index)
+  }
+  if (activeSources.length > 0 && world.electricalLaunchTick !== world.tick) {
+    launchElectricalPulse(world, activeSources)
+    world.electricalLaunchTick = world.tick
   }
 
-  for (let distance = 0; distance < CURRENT_SPEED && head < tail; distance += 1) {
-    const layerEnd = tail
-    while (head < layerEnd) {
-      const index = world.electricalQueue[head++]
-      next[index] = CURRENT_TRAIL_STRENGTH
-      const x = index % world.width
-      const y = Math.floor(index / world.width)
-      if (x > 0) tail = enqueueConductiveNeighbor(world, index - 1, tail)
-      if (x + 1 < world.width) tail = enqueueConductiveNeighbor(world, index + 1, tail)
-      if (y > 0) tail = enqueueConductiveNeighbor(world, index - world.width, tail)
-      if (y + 1 < world.height) tail = enqueueConductiveNeighbor(world, index + world.width, tail)
-    }
-  }
+  world.electricalWaves = world.electricalWaves.filter((wave) => advanceWave(world, wave, next))
 
   const previous = world.charge
   world.charge = next
@@ -96,5 +119,5 @@ export function updateElectricity(world: World): void {
       world.status[index] |= StatusFlag.Burning
     }
   }
-  world.electricalActive = hasSource || hasCharge
+  world.electricalActive = hasSource || hasCharge || world.electricalWaves.length > 0
 }

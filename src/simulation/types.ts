@@ -19,7 +19,8 @@ export interface World {
   thermalRemainder: Int32Array
   moistureDelta: Int16Array
   chargeNext: Uint8Array
-  electricalQueue: Int32Array
+  electricalWaves: ElectricalWave[]
+  electricalLaunchTick: number
   electricalActive: boolean
   ambientTemperature: number
   tick: number
@@ -127,6 +128,14 @@ export interface CellInspection {
   phaseProgress: number
   electricalConductivity: number
   phaseTransitions: readonly CellInspectionPhaseTransition[]
+}
+
+export interface ElectricalWave {
+  queue: Int32Array
+  visited: Uint8Array
+  head: number
+  tail: number
+  layerEnd: number
 }
 
 export interface CellInspectionPhaseTransition {

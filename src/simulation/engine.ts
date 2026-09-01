@@ -1,7 +1,7 @@
 import { MATERIAL_BY_ID, MaterialId, initializeTransientState } from './materials'
 import { AMBIENT_TEMPERATURE } from './constants'
 import { updatePhysicalWorld } from './physics'
-import { updateElectricity } from './electricity'
+import { launchElectricalPulse, updateElectricity } from './electricity'
 import { normalizeSeed } from './random'
 import { rasterizeTitle } from './title'
 import { GRID_HEIGHT, GRID_WIDTH, type MaterialMobility, type Snapshot, type World } from './types'
@@ -29,7 +29,8 @@ export function createWorld(seed = 0x4b504958, withTitle = true, width = GRID_WI
     thermalRemainder: new Int32Array(width * height),
     moistureDelta: new Int16Array(width * height),
     chargeNext: new Uint8Array(width * height),
-    electricalQueue: new Int32Array(width * height),
+    electricalWaves: [],
+    electricalLaunchTick: -1,
     electricalActive: false,
     ambientTemperature: AMBIENT_TEMPERATURE,
     tick: 0,
@@ -84,7 +85,8 @@ export function clearWorld(world: World): void {
   world.thermalRemainder.fill(0)
   world.moistureDelta.fill(0)
   world.chargeNext.fill(0)
-  world.electricalQueue.fill(0)
+  world.electricalWaves.length = 0
+  world.electricalLaunchTick = -1
   world.electricalActive = false
 }
 
@@ -183,7 +185,10 @@ export function replaceWorld(world: World, snapshot: Snapshot): void {
   world.thermalRemainder.fill(0)
   world.moistureDelta.fill(0)
   world.chargeNext.fill(0)
-  world.electricalQueue.fill(0)
+  world.electricalWaves.length = 0
+  world.electricalLaunchTick = -1
+  const savedFront = [...snapshot.charge.keys()].filter((index) => snapshot.charge[index] === 255)
+  if (savedFront.length > 0) launchElectricalPulse(world, savedFront)
   world.electricalActive = snapshot.charge.some((value) => value > 0)
     || snapshot.material.some((materialId) => Boolean(MATERIAL_BY_ID.get(materialId)?.properties.chargeSource))
   world.tick = snapshot.tick >>> 0

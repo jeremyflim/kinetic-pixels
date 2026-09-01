@@ -179,9 +179,11 @@ Electrical behavior is property-driven rather than a list of Spark pair rules:
 | Rubber, dry Wood, dry Soil | 0 | Insulators |
 | Saturated porous material | Base + up to 150 | Moisture can create an otherwise absent conductive path |
 
-Charge uses a bounded fixed-size breadth-first traversal. A pulse advances four cells per tick,
-splits across connected branches, and continues at full strength for any distance available in the
-play space. The Charged status is a visual projection of the current front and its short fading
+Charge uses a bounded fixed-size breadth-first traversal with a visited map per launched pulse. A
+pulse advances four cells per tick, splits across connected branches, and continues at full
+strength for any distance available in the play space. Overlapping pulses remain independent and
+terminate after each has visited its connected network, so collisions cannot create reflected
+current loops. The Charged status is a visual projection of the current front and its short fading
 trail. Resistive heating is deliberately modest and
 still enters the capacity-aware thermal field. Contact with a sufficiently charged cell can ignite
 sensitive fuel: Gunpowder and Hydrogen are most sensitive, followed by Alcohol Vapor, Oil,

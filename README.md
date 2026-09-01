@@ -159,7 +159,8 @@ Playwright verifies the user-visible contract rather than internal React state.
 
 The current suite contains:
 
-- **61 Vitest tests** covering material behavior, electrical networks, aqueous dilution, flow
+- **62 Vitest tests** covering material behavior, electrical networks, overlapping-pulse
+  termination, aqueous dilution, flow
   properties, Source, heat and phase transitions, moisture, chemistry, sparse combustion residue,
   explosions, deterministic ordering, clearing, save migration, and serialization.
 - **28 Playwright tests** covering pointer and keyboard flows, Monitor states, time rate, paused

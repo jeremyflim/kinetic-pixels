@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { AMBIENT_TEMPERATURE, THERMAL_ENERGY_UNIT_J_M3 } from './constants'
 import { clearWorld, createWorld, paintCircle, paintStroke, replaceWorld, snapshotWorld, stepWorld } from './engine'
-import { effectiveElectricalConductivity, updateElectricity } from './electricity'
+import { effectiveElectricalConductivity, launchElectricalPulse, updateElectricity } from './electricity'
 import {
   FIRE_LIFETIME_MIN,
   MATERIALS,
@@ -566,6 +566,27 @@ describe('specific chemistry and electrical networks', () => {
     world.tick = 30
     updateElectricity(world)
     expect(world.charge[beforeRubber]).toBeGreaterThan(0)
+  })
+
+  it('lets two offset pulses leave a Metal line instead of reflecting forever', () => {
+    const world = createWorld(310, false, 6, 6)
+    const conductorMap = ['######', '.###.#', '####.#', '###.##', '.#####', '#....#']
+    for (let y = 0; y < world.height; y += 1) {
+      for (let x = 0; x < world.width; x += 1) {
+        if (conductorMap[y][x] === '#') place(world, x, y, MaterialId.Metal)
+      }
+    }
+    const first = index(world, 1, 3)
+    const second = index(world, 4, 4)
+    for (let tick = 0; tick < 10; tick += 1) {
+      if (tick < 6) launchElectricalPulse(world, [first])
+      if (tick >= 4) launchElectricalPulse(world, [second])
+      updateElectricity(world)
+    }
+    for (let tick = 0; tick < 100; tick += 1) updateElectricity(world)
+    expect(world.charge.every((charge) => charge === 0)).toBe(true)
+    expect(world.electricalWaves).toHaveLength(0)
+    expect(world.electricalActive).toBe(false)
   })
 
   it('conducts far better through salt water and moisture-saturated wood than through dry wood', () => {
