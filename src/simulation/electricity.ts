@@ -3,6 +3,9 @@ import type { MaterialProperties, World } from './types'
 
 const CHARGE_STRENGTH = 255
 const CHARGE_VISIBLE_THRESHOLD = 32
+const CURRENT_SPEED = 4
+const CURRENT_TRAIL_STRENGTH = 170
+const CURRENT_TRAIL_DECAY = 85
 
 export function effectiveElectricalConductivity(world: World, index: number): number {
   const properties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
@@ -18,7 +21,7 @@ export function isChargeSourceActive(properties: MaterialProperties, tick: numbe
 }
 
 function enqueueConductiveNeighbor(world: World, index: number, tail: number): number {
-  if (world.chargeNext[index] > 0 || effectiveElectricalConductivity(world, index) <= 0) return tail
+  if (world.charge[index] > 0 || world.chargeNext[index] > 0 || effectiveElectricalConductivity(world, index) <= 0) return tail
   world.chargeNext[index] = CHARGE_STRENGTH
   world.electricalQueue[tail] = index
   return tail + 1
@@ -32,31 +35,47 @@ export function updateElectricity(world: World): void {
   let tail = 0
   let hasSource = false
 
+  for (let index = 0; index < world.charge.length; index += 1) {
+    const charge = world.charge[index]
+    if (charge === CHARGE_STRENGTH && effectiveElectricalConductivity(world, index) > 0) {
+      next[index] = CHARGE_STRENGTH
+      world.electricalQueue[tail++] = index
+    } else if (charge > 0) {
+      next[index] = Math.max(0, charge - CURRENT_TRAIL_DECAY)
+    }
+  }
+
   for (let index = 0; index < world.material.length; index += 1) {
     const properties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
     if (properties.chargeSource <= 0) continue
     hasSource = true
     if (!isChargeSourceActive(properties, world.tick)) continue
+    if (next[index] === CHARGE_STRENGTH) continue
     next[index] = CHARGE_STRENGTH
     world.electricalQueue[tail++] = index
   }
 
-  while (head < tail) {
-    const index = world.electricalQueue[head++]
-    const x = index % world.width
-    const y = Math.floor(index / world.width)
-    if (x > 0) tail = enqueueConductiveNeighbor(world, index - 1, tail)
-    if (x + 1 < world.width) tail = enqueueConductiveNeighbor(world, index + 1, tail)
-    if (y > 0) tail = enqueueConductiveNeighbor(world, index - world.width, tail)
-    if (y + 1 < world.height) tail = enqueueConductiveNeighbor(world, index + world.width, tail)
+  for (let distance = 0; distance < CURRENT_SPEED && head < tail; distance += 1) {
+    const layerEnd = tail
+    while (head < layerEnd) {
+      const index = world.electricalQueue[head++]
+      next[index] = CURRENT_TRAIL_STRENGTH
+      const x = index % world.width
+      const y = Math.floor(index / world.width)
+      if (x > 0) tail = enqueueConductiveNeighbor(world, index - 1, tail)
+      if (x + 1 < world.width) tail = enqueueConductiveNeighbor(world, index + 1, tail)
+      if (y > 0) tail = enqueueConductiveNeighbor(world, index - world.width, tail)
+      if (y + 1 < world.height) tail = enqueueConductiveNeighbor(world, index + world.width, tail)
+    }
   }
 
   const previous = world.charge
   world.charge = next
   world.chargeNext = previous
-  world.electricalActive = hasSource
+  let hasCharge = false
   for (let index = 0; index < world.material.length; index += 1) {
     const charge = world.charge[index]
+    if (charge > 0) hasCharge = true
     const properties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
     if (charge >= CHARGE_VISIBLE_THRESHOLD) world.status[index] |= StatusFlag.Charged
     else world.status[index] &= ~StatusFlag.Charged
@@ -75,4 +94,5 @@ export function updateElectricity(world: World): void {
       world.status[index] |= StatusFlag.Burning
     }
   }
+  world.electricalActive = hasSource || hasCharge
 }

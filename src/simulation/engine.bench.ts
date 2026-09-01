@@ -29,7 +29,7 @@ describe('192 × 180 simulation tick', () => {
   const circuit = filled(MaterialId.Metal)
   circuit.material[0] = MaterialId.Battery
   initializeTransientState(circuit, 0, MaterialId.Battery)
-  bench('fully powered Metal network', () => stepWorld(circuit))
+  bench('current propagating through Metal', () => stepWorld(circuit))
 
   const combustion = createWorld(0xabc123, false)
   for (let index = 0; index < combustion.material.length; index += 3) {

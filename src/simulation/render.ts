@@ -76,7 +76,7 @@ export function cellColor(world: World, index: number): readonly [number, number
   }
   if (cellStatus & StatusFlag.Charged) {
     const chargeColor = world.tick % 2 === 0 ? [255, 255, 255] as const : [78, 224, 200] as const
-    color = blendColor(color, chargeColor, 0.65)
+    color = blendColor(color, chargeColor, 0.25 + world.charge[index] / 255 * 0.5)
   }
   if (!isBurning && VISIBLY_HEATED.has(materialId) && world.temperature[index] > 100) {
     const blend = Math.min(0.46, ((world.temperature[index] - 100) / 900) * 0.46)

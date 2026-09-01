@@ -516,17 +516,29 @@ describe('specific chemistry and electrical networks', () => {
     expect(reactMaterialPair(world, acid, glass)).toBe(false)
   })
 
-  it('powers every branch and distance of a connected Metal network in one tick without acting as a heater', () => {
+  it('moves a full-strength current front quickly through every branch of connected Metal', () => {
     const world = createWorld(29, false, 96, 5)
-    const spark = place(world, 0, 2, MaterialId.Spark)
+    const battery = place(world, 0, 2, MaterialId.Battery)
     const branches: number[] = []
     for (let x = 1; x < world.width; x += 1) branches.push(place(world, x, 2, MaterialId.Metal))
     branches.push(place(world, 48, 1, MaterialId.Metal), place(world, 48, 3, MaterialId.Metal))
-    const startingTemperature = world.temperature[spark]
+    const startingTemperature = world.temperature[battery]
     updateElectricity(world)
-    expect(branches.every((cell) => world.charge[cell] === 255)).toBe(true)
-    expect(branches.every((cell) => world.status[cell] & StatusFlag.Charged)).toBe(true)
-    expect(world.temperature[spark]).toBe(startingTemperature)
+    expect(world.charge[2 * world.width + 4]).toBe(255)
+    expect(world.charge[2 * world.width + 5]).toBe(0)
+
+    let reachedBranches = false
+    for (let tick = 1; tick < 23; tick += 1) {
+      world.tick = tick
+      updateElectricity(world)
+      reachedBranches ||= branches.slice(-2).every((cell) => world.charge[cell] > 0)
+    }
+    expect(reachedBranches).toBe(true)
+    expect(world.charge[2 * world.width + 92]).toBe(255)
+    expect(world.status[2 * world.width + 92] & StatusFlag.Charged).toBe(StatusFlag.Charged)
+    expect(world.charge[2 * world.width + 1]).toBe(0)
+    expect(branches.some((cell) => world.charge[cell] > 0)).toBe(true)
+    expect(world.temperature[battery]).toBe(startingTemperature)
   })
 
   it('pulses Battery power while Rubber breaks the connected network', () => {
@@ -536,14 +548,16 @@ describe('specific chemistry and electrical networks', () => {
     place(world, 2, 1, MaterialId.Rubber)
     const afterRubber = place(world, 3, 1, MaterialId.Metal)
     updateElectricity(world)
-    expect(world.charge[beforeRubber]).toBe(255)
+    expect(world.charge[beforeRubber]).toBeGreaterThan(0)
     expect(world.charge[afterRubber]).toBe(0)
     world.tick = 12
+    updateElectricity(world)
+    world.tick = 13
     updateElectricity(world)
     expect(world.charge[beforeRubber]).toBe(0)
     world.tick = 30
     updateElectricity(world)
-    expect(world.charge[beforeRubber]).toBe(255)
+    expect(world.charge[beforeRubber]).toBeGreaterThan(0)
   })
 
   it('conducts far better through salt water and moisture-saturated wood than through dry wood', () => {

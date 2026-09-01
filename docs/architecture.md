@@ -73,12 +73,13 @@ behavior driven by a shared nutrition property on Water, Salt Water, and Soil.
 ## Electricity
 
 Electricity has its own canonical `Uint8Array` charge channel plus a transient field and fixed-size
-breadth-first queue, so it never competes with lifetime, growth, or phase state. Each active source
-powers its complete cardinally connected conductive component during the same 60 Hz pass. There
-is intentionally no distance attenuation inside the limited 192 × 180 play space.
+breadth-first queue, so it never competes with lifetime, growth, or phase state. A full-strength
+current front advances four cardinal cells per 60 Hz pass, splits naturally at branches, and leaves
+a brief fading visual trail. There is intentionally no distance attenuation inside the limited
+192 × 180 play space.
 
 Spark is a short-lived ambient-temperature charge source; it does not masquerade as Fire or add a
-fixed temperature increase to adjacent Water. Battery emits a 12-tick pulse every 30 ticks. Metal
+fixed temperature increase to adjacent Water. Battery launches one traveling pulse every 30 ticks. Metal
 and Salt Water provide solid and liquid paths, while Rubber and dry porous solids block it.
 Moisture saturation adds conductivity to porous materials, which makes
 wet Wood and Soil electrically different from their dry forms. Resistive heat is intentionally

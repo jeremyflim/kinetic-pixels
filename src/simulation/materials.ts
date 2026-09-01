@@ -173,7 +173,7 @@ export const MATERIAL_PROPERTIES: Readonly<Record<MaterialIdValue, MaterialPrope
   },
   [MaterialId.Battery]: {
     ...inertProperties, phase: 'solid', mobility: 'immovable', density: 11, hardness: 0.62, friction: 0.98,
-    electricalConductivity: 255, chargeSource: 255, chargePulsePeriod: 30, chargePulseDuration: 12,
+    electricalConductivity: 255, chargeSource: 255, chargePulsePeriod: 30, chargePulseDuration: 1,
     ...thermal(2_800, 900, 4), blastResistance: 0.48,
     ignitionTemperature: 180, fuel: 180, burnRate: 4, combustionHeat: 850, heatEmission: 95, smokeYield: 0.02,
     explosionRadius: 3, explosionHeat: 850, explosionPressure: 0.75,

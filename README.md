@@ -107,9 +107,10 @@ Material behavior is split between shared property-driven systems and a sparse p
 - Porous materials absorb and diffuse finite Water mass; evaporation consumes heat.
 - Combustible cells ignite from temperature and dryness, consume fuel, and feed energy back into
   the shared thermal field; configured fuels can leave Ash rather than simply disappearing.
-- A separate charge field powers an entire connected conductive network without distance loss.
-  Battery emits a 12-tick pulse every 30 ticks, Metal carries it, Salt Water creates conductive
-  liquid paths, Rubber insulates, and saturated porous materials become conductive.
+- A separate charge field carries visible current fronts through conductive networks at four cells
+  per tick without distance loss. Battery launches one pulse every 30 ticks, Metal carries it,
+  Salt Water creates conductive liquid paths, Rubber insulates, and saturated porous materials
+  become conductive.
 - Identity-specific pair rules are reserved for chemistry such as Acid corrosion, Salt dissolving,
   and Sodium reacting with water—not for general heat, electricity, combustion, or movement.
 - Liquid spread is controlled by a declared viscosity value. Gases declare lateral dispersion,
@@ -196,15 +197,15 @@ Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1
 
 | 192 × 180 scenario | Mean tick | Throughput |
 | --- | ---: | ---: |
-| Fully occupied stationary grid | 4.60 ms | 217.40 ticks/s |
-| Falling Sand | 7.32 ms | 136.67 ticks/s |
-| Water spread | 4.95 ms | 201.82 ticks/s |
-| Fully occupied Lava / thermal field | 11.14 ms | 89.80 ticks/s |
-| Fully powered Metal network | 5.36 ms | 186.71 ticks/s |
-| Burning Wood / Fire / Smoke | 7.94 ms | 125.89 ticks/s |
+| Fully occupied stationary grid | 3.13 ms | 319.51 ticks/s |
+| Falling Sand | 7.76 ms | 128.84 ticks/s |
+| Water spread | 4.93 ms | 202.73 ticks/s |
+| Fully occupied Lava / thermal field | 11.34 ms | 88.17 ticks/s |
+| Current propagating through Metal | 6.18 ms | 161.94 ticks/s |
+| Burning Wood / Fire / Smoke | 8.41 ms | 118.94 ticks/s |
 
 These figures are descriptive rather than CI thresholds because shared machines and background
-load introduce timing noise. Electrical passes are skipped when no electrical source exists.
+load introduce timing noise. Electrical passes are skipped when no source or traveling current exists.
 `2×` is a target rate; extremely dense thermal scenes may not
 sustain the full 120 simulation steps per wall-clock second.
 

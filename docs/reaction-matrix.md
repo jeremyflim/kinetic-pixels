@@ -25,8 +25,8 @@ Additional interactions are selected by properties rather than material names:
 | Combustible material + sufficient temperature and dryness | Ignition; fuel then produces heat and limited Smoke |
 | Fire or an actively burning fuel + nearby cells | Fixed emitted energy; each target's heat capacity determines its temperature rise |
 | Material crossing one of its phase thresholds | Latent progress accumulates before conversion |
-| Connected cells with electrical conductivity | The entire connected component receives full charge in one tick |
-| Charge source + conductive neighbor | Spark powers while present; Battery pulses for 12 of every 30 ticks |
+| Connected cells with electrical conductivity | A full-strength current front travels four cells per tick and splits at branches |
+| Charge source + conductive neighbor | Spark launches current while present; Battery launches one pulse every 30 ticks |
 | Porous material + absorbed moisture | Effective electrical conductivity rises with saturation |
 | Strong charge + electrically sensitive fuel | The fuel ignites through a generic contact-arc check |
 | Extinguishing liquid + Fire/burning fuel | Fire becomes Smoke or active combustion is cleared |
@@ -162,7 +162,7 @@ Electrical behavior is property-driven rather than a list of Spark pair rules:
 | Material or condition | Base conductivity (0–255) | Electrical role |
 | --- | ---: | --- |
 | Spark | 255 | Short-lived 255-strength pulse source at room temperature |
-| Battery | 255 | Full network pulse for 12 of every 30 ticks |
+| Battery | 255 | One traveling network pulse every 30 ticks |
 | Metal | 255 | General solid conductor |
 | Salt Water | 215 | Conductive liquid; substantially stronger than Water |
 | Sodium | 170 | Conductive reactive powder |
@@ -170,9 +170,10 @@ Electrical behavior is property-driven rather than a list of Spark pair rules:
 | Rubber, dry Wood, dry Soil | 0 | Insulators |
 | Saturated porous material | Base + up to 150 | Moisture can create an otherwise absent conductive path |
 
-Charge uses a fixed-size breadth-first traversal, so a pulse reaches every cell in every connected
-branch during the same simulation tick. Distance does not reduce charge inside this play space.
-The Charged status is a visual projection of the canonical field. Resistive heating is deliberately modest and
+Charge uses a bounded fixed-size breadth-first traversal. A pulse advances four cells per tick,
+splits across connected branches, and continues at full strength for any distance available in the
+play space. The Charged status is a visual projection of the current front and its short fading
+trail. Resistive heating is deliberately modest and
 still enters the capacity-aware thermal field. Contact with a sufficiently charged cell can ignite
 sensitive fuel: Gunpowder and Hydrogen are most sensitive, followed by Alcohol Vapor, Oil,
 Alcohol, and Coal.
