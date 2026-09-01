@@ -18,9 +18,10 @@ automatic saving.
 
 - **Responsive simulation loop:** the canonical world, fixed-step physics, and rendering run in
   a dedicated module worker, keeping high-frequency grid updates out of React.
-- **Compact deterministic state:** parallel typed arrays store material identity, electrical
-  charge, temperature, moisture, fuel, liquid mass, phase progress, status, and update bookkeeping. A serialized
-  xorshift PRNG makes equal seeds and commands reproducible.
+- **Compact deterministic state:** parallel typed arrays store material identity, per-cell
+  material state, electrical charge, temperature, moisture, fuel, liquid mass, phase progress,
+  status, and update bookkeeping. A serialized xorshift PRNG makes equal seeds and commands
+  reproducible.
 - **Data-driven materials:** stable numeric IDs point to one physical-properties table covering
   movement, density, thermal behavior, electrical conductivity, ignition sensitivity, phase transitions, combustion, moisture,
   corrosion, and blast resistance.
@@ -112,8 +113,12 @@ Material behavior is split between shared property-driven systems and a sparse p
   per tick without distance loss. Battery launches one pulse every 30 ticks, Metal carries it,
   Salt Water creates conductive liquid paths, Rubber insulates, and saturated porous materials
   become conductive.
-- Identity-specific pair rules are reserved for chemistry such as Acid corrosion, Salt dissolving,
-  and Sodium reacting with water—not for general heat, electricity, combustion, or movement.
+- Identity-specific pair rules are reserved for chemistry. Acid corrosion and Sodium reacting
+  with Alcohol release Hydrogen; Salt dissolves into Water, melts Ice, and can remain behind when
+  brine boils; Water touching sufficiently hot or burning Oil flashes into Steam.
+- Materials that share a broad category still have distinct gameplay roles. Wood is immovable,
+  wettable kindling; Coal falls, needs more heat to ignite, is spark-sensitive, burns roughly
+  three times longer, releases more heat, and renders with a separate ember treatment.
 - Liquid spread is controlled by a declared viscosity value. Gases declare lateral dispersion,
   allowing Smoke, Steam, Hydrogen, and Alcohol Vapor to spread instead of parking at the ceiling.
 - Water dilutes adjacent Alcohol, Acid, and Salt Water through a shared concentration model.
@@ -180,8 +185,10 @@ Local slots use these versioned keys:
 - `kinetic-pixels:save:c`
 
 A save records the material, state, status, electrical-charge, temperature, moisture, fuel,
-liquid-mass, and phase-progress grids, plus the tick, initial seed, current PRNG state, format metadata, name, and
-timestamp. Interface preferences and play state are intentionally not persisted.
+liquid-mass, and phase-progress grids, plus the tick, initial seed, current PRNG state, format
+metadata, name, and timestamp. The shared state grid carries material-specific data such as
+transient lifetimes, Source programming, and normalized solution concentration. Interface
+preferences and play state are intentionally not persisted.
 
 JSON files use format `kinetic-pixels`, version `6`, and fixed 192 × 180 dimensions. Imports are
 size-limited and fully validated before mutation. Invalid JSON, unknown materials, unsupported
