@@ -57,9 +57,11 @@ the same way.
 
 ## Controls
 
-- Choose from 27 paintable materials in the scrollable Elements rail. The original set is joined
-  by Salt, Salt Water, Coal, Ash, Rubber, Copper, Battery, Mercury, Alcohol, Alcohol Vapor,
-  Sodium, Hydrogen, Soil, and Foam. Glass, Smoke, and Steam also emerge from simulation events.
+- Choose from 24 paintable materials in the scrollable Elements rail. The original set is joined
+  by Salt, Salt Water, Coal, Rubber, Battery, Alcohol, Alcohol Vapor, Sodium, Hydrogen, Soil,
+  and Source. Ash, Glass, Smoke, and Steam emerge from simulation events.
+- Source learns the first material that touches it, then emits that material into nearby empty
+  cells every six ticks. Simulation effects cannot destroy Source; the Eraser can.
 - Click, hold, or drag on the field to paint. A held pointer continually reapplies the brush, and
   the first ordinary field click starts the simulation.
 - Use `Space` to Play/Pause and `E` to toggle the Eraser.
@@ -105,11 +107,13 @@ Material behavior is split between shared property-driven systems and a sparse p
 - Porous materials absorb and diffuse finite Water mass; evaporation consumes heat.
 - Combustible cells ignite from temperature and dryness, consume fuel, and feed energy back into
   the shared thermal field; configured fuels can leave Ash rather than simply disappearing.
-- A separate charge field propagates deterministic pulses through conductive networks. Battery
-  supplies continuous charge, Copper and Metal carry it efficiently, Salt Water and Mercury
-  create conductive liquid paths, Rubber insulates, and saturated porous materials become conductive.
+- A separate charge field powers an entire connected conductive network without distance loss.
+  Battery emits a 12-tick pulse every 30 ticks, Metal carries it, Salt Water creates conductive
+  liquid paths, Rubber insulates, and saturated porous materials become conductive.
 - Identity-specific pair rules are reserved for chemistry such as Acid corrosion, Salt dissolving,
   and Sodium reacting with water—not for general heat, electricity, combustion, or movement.
+- Liquid spread is controlled by a declared viscosity value. Gases declare lateral dispersion,
+  allowing Smoke, Steam, Hydrogen, and Alcohol Vapor to spread instead of parking at the ceiling.
 
 Water retains its high relative heat capacity, while its latent boiling duration is deliberately
 gameplay-scaled. Steam has no arbitrary deletion timer: warm vapor persists, cooled vapor
@@ -142,8 +146,9 @@ Playwright verifies the user-visible contract rather than internal React state.
 
 The current suite contains:
 
-- **47 Vitest tests** covering material behavior, electrical networks, heat and phase transitions,
-  moisture, chemistry, combustion, explosions, deterministic ordering, clearing, save migration, and serialization.
+- **51 Vitest tests** covering material behavior, electrical networks, flow properties, Source,
+  heat and phase transitions, moisture, chemistry, combustion, explosions, deterministic ordering,
+  clearing, save migration, and serialization.
 - **28 Playwright tests** covering pointer and keyboard flows, Monitor states, time rate, paused
   editing, long strokes, saves, import/export validation, focus behavior, responsive geometry,
   and visual regression snapshots at 1024 × 576, 1366 × 768, and 1920 × 1080.
@@ -169,8 +174,8 @@ Local slots use these versioned keys:
 - `kinetic-pixels:save:b`
 - `kinetic-pixels:save:c`
 
-A save records the material, state, status, electrical-charge, temperature, moisture, fuel, liquid-mass, and
-phase-progress grids, plus the tick, initial seed, current PRNG state, format metadata, name, and
+A save records the material, state, status, electrical-charge, temperature, moisture, fuel,
+liquid-mass, and phase-progress grids, plus the tick, initial seed, current PRNG state, format metadata, name, and
 timestamp. Interface preferences and play state are intentionally not persisted.
 
 JSON files use format `kinetic-pixels`, version `6`, and fixed 192 × 180 dimensions. Imports are
@@ -191,15 +196,15 @@ Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1
 
 | 192 × 180 scenario | Mean tick | Throughput |
 | --- | ---: | ---: |
-| Fully occupied stationary grid | 3.89 ms | 257.35 ticks/s |
-| Falling Sand | 9.31 ms | 107.46 ticks/s |
-| Water spread | 6.39 ms | 156.45 ticks/s |
-| Fully occupied Lava / thermal field | 13.35 ms | 74.89 ticks/s |
-| Fully powered Copper network | 7.81 ms | 128.08 ticks/s |
-| Burning Wood / Fire / Smoke | 8.76 ms | 114.13 ticks/s |
+| Fully occupied stationary grid | 4.60 ms | 217.40 ticks/s |
+| Falling Sand | 7.32 ms | 136.67 ticks/s |
+| Water spread | 4.95 ms | 201.82 ticks/s |
+| Fully occupied Lava / thermal field | 11.14 ms | 89.80 ticks/s |
+| Fully powered Metal network | 5.36 ms | 186.71 ticks/s |
+| Burning Wood / Fire / Smoke | 7.94 ms | 125.89 ticks/s |
 
 These figures are descriptive rather than CI thresholds because shared machines and background
-load introduce timing noise. Electrical passes are skipped when no source or stored charge exists.
+load introduce timing noise. Electrical passes are skipped when no electrical source exists.
 `2×` is a target rate; extremely dense thermal scenes may not
 sustain the full 120 simulation steps per wall-clock second.
 

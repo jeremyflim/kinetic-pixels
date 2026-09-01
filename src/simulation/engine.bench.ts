@@ -26,10 +26,10 @@ describe('192 × 180 simulation tick', () => {
   lava.temperature.fill(MATERIAL_PROPERTIES[MaterialId.Lava].initialTemperature)
   bench('fully occupied Lava heat', () => stepWorld(lava))
 
-  const circuit = filled(MaterialId.Copper)
+  const circuit = filled(MaterialId.Metal)
   circuit.material[0] = MaterialId.Battery
   initializeTransientState(circuit, 0, MaterialId.Battery)
-  bench('fully powered Copper network', () => stepWorld(circuit))
+  bench('fully powered Metal network', () => stepWorld(circuit))
 
   const combustion = createWorld(0xabc123, false)
   for (let index = 0; index < combustion.material.length; index += 3) {

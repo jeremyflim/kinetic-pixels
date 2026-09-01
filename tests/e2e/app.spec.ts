@@ -56,7 +56,7 @@ test('shows the complete paintable material palette inside the element rail', as
   await page.setViewportSize({ width: 1024, height: 576 })
   const expected = [
     'Sand', 'Water', 'Stone', 'Wood', 'Fire', 'Oil', 'Plant', 'Acid', 'Metal', 'Lava', 'Ice', 'Spark', 'Gunpowder',
-    'Salt', 'Salt Water', 'Coal', 'Ash', 'Rubber', 'Copper', 'Battery', 'Mercury', 'Alcohol', 'Alcohol Vapor', 'Sodium', 'Hydrogen', 'Soil', 'Foam',
+    'Salt', 'Salt Water', 'Coal', 'Rubber', 'Battery', 'Alcohol', 'Alcohol Vapor', 'Sodium', 'Hydrogen', 'Soil', 'Source',
   ]
   const buttons = page.locator('.material-button')
   await expect(buttons).toHaveCount(expected.length)
@@ -75,8 +75,8 @@ test('shows the complete paintable material palette inside the element rail', as
   const grid = page.locator('.material-grid')
   expect(await grid.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true)
   const markBefore = await page.locator('.rail-mark').boundingBox()
-  await page.getByRole('button', { name: 'Foam' }).scrollIntoViewIfNeeded()
-  await expect(page.getByRole('button', { name: 'Foam' })).toBeVisible()
+  await page.getByRole('button', { name: 'Source' }).scrollIntoViewIfNeeded()
+  await expect(page.getByRole('button', { name: 'Source' })).toBeVisible()
   const lastButtonBox = await buttons.last().boundingBox()
   const leftColumnButtonBox = await page.getByRole('button', { name: 'Hydrogen' }).boundingBox()
   const markBox = await page.locator('.rail-mark').boundingBox()
@@ -86,9 +86,9 @@ test('shows the complete paintable material palette inside the element rail', as
   expect(lastButtonBox.y + lastButtonBox.height).toBeLessThanOrEqual(markBox.y)
   expect(markBox.y).toBeCloseTo(markBefore.y, 1)
 
-  await page.getByRole('button', { name: 'Foam' }).click()
-  await expect(page.getByRole('button', { name: 'Foam' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByText('Foam', { exact: true }).last()).toBeVisible()
+  await page.getByRole('button', { name: 'Source' }).click()
+  await expect(page.getByRole('button', { name: 'Source' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByText('Source', { exact: true }).last()).toBeVisible()
 })
 
 test('clearly separates the playable canvas from its dark bezel', async ({ page }) => {

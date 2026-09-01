@@ -29,6 +29,7 @@ export function createWorld(seed = 0x4b504958, withTitle = true, width = GRID_WI
     thermalRemainder: new Int32Array(width * height),
     moistureDelta: new Int16Array(width * height),
     chargeNext: new Uint8Array(width * height),
+    electricalQueue: new Int32Array(width * height),
     electricalActive: false,
     ambientTemperature: AMBIENT_TEMPERATURE,
     tick: 0,
@@ -83,6 +84,7 @@ export function clearWorld(world: World): void {
   world.thermalRemainder.fill(0)
   world.moistureDelta.fill(0)
   world.chargeNext.fill(0)
+  world.electricalQueue.fill(0)
   world.electricalActive = false
 }
 
@@ -181,6 +183,7 @@ export function replaceWorld(world: World, snapshot: Snapshot): void {
   world.thermalRemainder.fill(0)
   world.moistureDelta.fill(0)
   world.chargeNext.fill(0)
+  world.electricalQueue.fill(0)
   world.electricalActive = snapshot.charge.some((value) => value > 0)
     || snapshot.material.some((materialId) => Boolean(MATERIAL_BY_ID.get(materialId)?.properties.chargeSource))
   world.tick = snapshot.tick >>> 0

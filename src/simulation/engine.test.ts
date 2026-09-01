@@ -5,9 +5,11 @@ import { effectiveElectricalConductivity, updateElectricity } from './electricit
 import {
   FIRE_LIFETIME_MIN,
   MATERIALS,
+  PAINTABLE_MATERIALS,
   MATERIAL_PROPERTIES,
   MATERIAL_REACTIONS,
   MaterialId,
+  SOURCE_EMISSION_INTERVAL,
   type MaterialIdValue,
   applyExplosion,
   initializeTransientState,
@@ -61,6 +63,10 @@ describe('material model', () => {
       expect(properties.heatCapacity).toBe(Math.max(1, Math.round(properties.massDensity * properties.specificHeatCapacity / THERMAL_ENERGY_UNIT_J_M3)))
       expect(properties.heatEmission).toBeGreaterThanOrEqual(0)
       expect(properties.moistureCapacity).toBeGreaterThanOrEqual(0)
+      expect(properties.viscosity).toBeGreaterThanOrEqual(0)
+      expect(properties.viscosity).toBeLessThanOrEqual(1)
+      expect(properties.dispersion).toBeGreaterThanOrEqual(0)
+      expect(properties.dispersion).toBeLessThanOrEqual(1)
     }
     expect(MATERIAL_REACTIONS.length).toBe(9)
     expect(MATERIAL_REACTIONS.filter((reaction) => !reaction.materials.includes(MaterialId.Acid))).toHaveLength(3)
@@ -510,26 +516,34 @@ describe('specific chemistry and electrical networks', () => {
     expect(reactMaterialPair(world, acid, glass)).toBe(false)
   })
 
-  it('fans a Spark pulse through every branch of a conductive network without acting as a heater', () => {
-    const world = createWorld(29, false, 5, 5)
+  it('powers every branch and distance of a connected Metal network in one tick without acting as a heater', () => {
+    const world = createWorld(29, false, 96, 5)
     const spark = place(world, 0, 2, MaterialId.Spark)
-    const branches = [place(world, 1, 2, MaterialId.Metal), place(world, 2, 2, MaterialId.Copper), place(world, 2, 1, MaterialId.Copper), place(world, 2, 3, MaterialId.Copper)]
+    const branches: number[] = []
+    for (let x = 1; x < world.width; x += 1) branches.push(place(world, x, 2, MaterialId.Metal))
+    branches.push(place(world, 48, 1, MaterialId.Metal), place(world, 48, 3, MaterialId.Metal))
     const startingTemperature = world.temperature[spark]
-    for (let tick = 0; tick < 5; tick += 1) updateElectricity(world)
-    expect(branches.every((cell) => world.charge[cell] > 0)).toBe(true)
+    updateElectricity(world)
+    expect(branches.every((cell) => world.charge[cell] === 255)).toBe(true)
     expect(branches.every((cell) => world.status[cell] & StatusFlag.Charged)).toBe(true)
     expect(world.temperature[spark]).toBe(startingTemperature)
   })
 
-  it('treats Battery as a continuous source and Rubber as an insulator', () => {
+  it('pulses Battery power while Rubber breaks the connected network', () => {
     const world = createWorld(31, false, 7, 3)
     place(world, 0, 1, MaterialId.Battery)
-    const beforeRubber = place(world, 1, 1, MaterialId.Copper)
+    const beforeRubber = place(world, 1, 1, MaterialId.Metal)
     place(world, 2, 1, MaterialId.Rubber)
-    const afterRubber = place(world, 3, 1, MaterialId.Copper)
-    for (let tick = 0; tick < 20; tick += 1) updateElectricity(world)
-    expect(world.charge[beforeRubber]).toBeGreaterThan(0)
+    const afterRubber = place(world, 3, 1, MaterialId.Metal)
+    updateElectricity(world)
+    expect(world.charge[beforeRubber]).toBe(255)
     expect(world.charge[afterRubber]).toBe(0)
+    world.tick = 12
+    updateElectricity(world)
+    expect(world.charge[beforeRubber]).toBe(0)
+    world.tick = 30
+    updateElectricity(world)
+    expect(world.charge[beforeRubber]).toBe(255)
   })
 
   it('conducts far better through salt water and moisture-saturated wood than through dry wood', () => {
@@ -547,7 +561,7 @@ describe('specific chemistry and electrical networks', () => {
   it('uses electrical sensitivity to ignite gunpowder through a wire', () => {
     const world = createWorld(33, false, 5, 1)
     place(world, 0, 0, MaterialId.Battery)
-    place(world, 1, 0, MaterialId.Copper)
+    place(world, 1, 0, MaterialId.Metal)
     const gunpowder = place(world, 2, 0, MaterialId.Gunpowder)
     for (let tick = 0; tick < 5; tick += 1) updateElectricity(world)
     expect(world.status[gunpowder] & StatusFlag.Burning).toBe(StatusFlag.Burning)
@@ -594,6 +608,60 @@ describe('specific chemistry and electrical networks', () => {
     place(garden, 1, 1, MaterialId.Plant)
     step(garden, 130)
     expect([...garden.material].filter((material) => material === MaterialId.Plant).length).toBeGreaterThan(1)
+  })
+
+  it('uses viscosity for liquid spread and dispersion for lateral gas movement', () => {
+    const waterWorld = createWorld(39, false, 25, 1)
+    const lavaWorld = createWorld(39, false, 25, 1)
+    place(waterWorld, 12, 0, MaterialId.Water)
+    place(lavaWorld, 12, 0, MaterialId.Lava)
+    stepWorld(waterWorld)
+    stepWorld(lavaWorld)
+    const waterX = waterWorld.material.findIndex((material) => material === MaterialId.Water)
+    const lavaX = lavaWorld.material.findIndex((material) => material === MaterialId.Lava)
+    expect(Math.abs(waterX - 12)).toBeGreaterThan(Math.abs(lavaX - 12))
+
+    const gasWorld = createWorld(40, false, 21, 1)
+    place(gasWorld, 10, 0, MaterialId.Smoke)
+    const gasPositions = new Set([10])
+    for (let tick = 0; tick < 12; tick += 1) {
+      stepWorld(gasWorld)
+      gasPositions.add(gasWorld.material.findIndex((material) => material === MaterialId.Smoke))
+    }
+    expect(gasPositions.size).toBeGreaterThan(1)
+  })
+
+  it('does not auto-ignite Alcohol Vapor at its authored starting temperature', () => {
+    const world = createWorld(41, false, 5, 5)
+    place(world, 2, 3, MaterialId.AlcoholVapor)
+    step(world, 8)
+    const vapor = world.material.findIndex((material) => material === MaterialId.AlcoholVapor)
+    expect(vapor).toBeGreaterThanOrEqual(0)
+    expect(world.status[vapor] & StatusFlag.Burning).toBe(0)
+  })
+
+  it('programs an indestructible Source from contact and emits saved material state', () => {
+    const world = createWorld(42, false, 7, 7)
+    const source = place(world, 3, 2, MaterialId.Source)
+    place(world, 3, 3, MaterialId.Sand)
+    stepWorld(world)
+    expect(world.state[source]).toBe(MaterialId.Sand)
+    step(world, SOURCE_EMISSION_INTERVAL * 3)
+    expect([...world.material].filter((material) => material === MaterialId.Sand).length).toBeGreaterThan(1)
+
+    applyExplosion(world, index(world, 2, 2), 2, 2, MATERIAL_PROPERTIES[MaterialId.Gunpowder])
+    expect(world.material[source]).toBe(MaterialId.Source)
+    paintCircle(world, 3, 2, 1, MaterialId.Sand, true)
+    expect(world.material[source]).toBe(MaterialId.Empty)
+  })
+
+  it('keeps retired compatibility materials loadable but removes them from the palette', () => {
+    const paintable = new Set<number>(PAINTABLE_MATERIALS.map((material) => material.id))
+    for (const materialId of [MaterialId.Ash, MaterialId.Copper, MaterialId.Mercury, MaterialId.Foam]) {
+      expect(MATERIALS.some((material) => material.id === materialId)).toBe(true)
+      expect(paintable.has(materialId)).toBe(false)
+    }
+    expect(paintable.has(MaterialId.Source)).toBe(true)
   })
 })
 

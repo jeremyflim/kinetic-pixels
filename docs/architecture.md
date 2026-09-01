@@ -31,8 +31,8 @@ Every material declares a phase (`vacuum`, `solid`, `liquid`, `gas`, or `energy`
 (`none`, `immovable`, `powder`, `fluid`, or `rising`). Update passes are scheduled from mobility,
 which keeps immovable and movable solids distinct without special-casing their IDs.
 
-Gameplay density controls displacement, friction controls drift and liquid reach, hardness resists
-Acid, electrical conductivity controls charge loss, and corrosiveness scales
+Gameplay density controls displacement, friction controls particle drift, viscosity controls
+liquid reach, gas dispersion controls lateral movement, hardness resists Acid, and corrosiveness scales
 corrosion. Separate SI-like thermal fields declare representative mass density `ρ` (kg/m³),
 specific heat `c` (J/kg·K), and thermal conductivity `k` (W/m·K).
 
@@ -72,19 +72,24 @@ behavior driven by a shared nutrition property on Water, Salt Water, and Soil.
 
 ## Electricity
 
-Electricity has its own canonical `Uint8Array` charge channel plus a transient double buffer, so
-it never competes with lifetime, growth, or phase state. Each 60 Hz pass computes a new field from
-the previous one. Sources inject strength, conductive cardinal neighbors propagate the strongest
-available signal with property-driven loss, and stored charge decays. Using the previous field for
-the complete pass makes branched networks deterministic and independent of scan direction.
+Electricity has its own canonical `Uint8Array` charge channel plus a transient field and fixed-size
+breadth-first queue, so it never competes with lifetime, growth, or phase state. Each active source
+powers its complete cardinally connected conductive component during the same 60 Hz pass. There
+is intentionally no distance attenuation inside the limited 192 × 180 play space.
 
 Spark is a short-lived ambient-temperature charge source; it does not masquerade as Fire or add a
-fixed temperature increase to adjacent Water. Battery is a continuous source. Metal and Copper
-carry charge efficiently, Mercury and Salt Water permit moving conductive paths, and Rubber and
-dry porous solids block it. Moisture saturation adds conductivity to porous materials, which makes
+fixed temperature increase to adjacent Water. Battery emits a 12-tick pulse every 30 ticks. Metal
+and Salt Water provide solid and liquid paths, while Rubber and dry porous solids block it.
+Moisture saturation adds conductivity to porous materials, which makes
 wet Wood and Soil electrically different from their dry forms. Resistive heat is intentionally
 small and capacity-aware. A reusable sensitivity property lets sufficiently charged conductors arc
 into Gunpowder, Coal, Alcohol, Alcohol Vapor, or Hydrogen without dedicated Spark pair rules.
+
+Source is an indestructible immovable utility cell. Its ordinary `state` channel stores the first
+non-empty neighboring material ID it observes. Every six ticks it chooses one neighboring empty
+cell and initializes a fresh copy through the same path used by painting. This keeps generated
+lifetimes, fuel, liquid mass, authored temperatures, and electrical sources consistent. Only an
+explicit erase command removes Source.
 
 Explosive materials declare radius, heat, and pressure. The generic explosion solver deposits
 heat by distance, compares pressure with each target's blast resistance, and leaves hot air when

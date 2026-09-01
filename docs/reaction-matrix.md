@@ -6,7 +6,7 @@ possible pair.
 
 ## How every pair interacts
 
-Every one of the 435 distinct non-empty material pairs exchanges temperature when adjacent.
+Every one of the 465 distinct non-empty material pairs exchanges temperature when adjacent.
 Heat crosses only cardinal cell boundaries. Empty air participates locally but also exchanges
 energy rapidly with a 20°C external environment, so an air gap is not equivalent to solid contact
 and long hot-air bridges decay.
@@ -17,14 +17,16 @@ Additional interactions are selected by properties rather than material names:
 | --- | --- |
 | Any two cells with different temperatures | Capacity-weighted heat conduction |
 | Denser moving material + lighter liquid/gas | The denser material can displace and settle through it |
+| Liquid with lower viscosity | Longer left/right movement during an open spread step |
+| Gas with dispersion | Occasional lateral movement while rising and along the ceiling |
 | Water + a porous material | Water mass becomes absorbed moisture |
 | Any two porous materials | Moisture diffuses from higher to lower saturation, even when their identities differ |
 | Hot moist material | Moisture evaporates, consumes heat, and can emit Steam |
 | Combustible material + sufficient temperature and dryness | Ignition; fuel then produces heat and limited Smoke |
 | Fire or an actively burning fuel + nearby cells | Fixed emitted energy; each target's heat capacity determines its temperature rise |
 | Material crossing one of its phase thresholds | Latent progress accumulates before conversion |
-| Cells with electrical conductivity | Charge propagates cardinally with conductivity-dependent loss and decay |
-| Charge source + conductive neighbor | Spark emits a short pulse; Battery continuously powers the network |
+| Connected cells with electrical conductivity | The entire connected component receives full charge in one tick |
+| Charge source + conductive neighbor | Spark powers while present; Battery pulses for 12 of every 30 ticks |
 | Porous material + absorbed moisture | Effective electrical conductivity rises with saturation |
 | Strong charge + electrically sensitive fuel | The fuel ignites through a generic contact-arc check |
 | Extinguishing liquid + Fire/burning fuel | Fire becomes Smoke or active combustion is cleared |
@@ -67,12 +69,17 @@ which controls movement, remains separate from physical mass density.
 | Copper | Solid copper | 8,960 | 385 | 401 | 345 | 20 | — |
 | Battery | Composite cell | 2,800 | 900 | 4 | 252 | 20 | Ignites at 180 |
 | Mercury | Liquid mercury | 13,534 | 140 | 8.3 | 189 | 20 | — |
-| Alcohol | Ethanol-like liquid | 789 | 2,440 | 0.17 | 193 | 20 | Above 78 → Alcohol Vapor; ignites at 75 |
-| Alcohol Vapor | Fuel vapor | 1.6 | 1,600 | 0.018 | 1 | 82 | Below 70 → Alcohol; ignites at 55 |
+| Alcohol | Ethanol-like liquid | 789 | 2,440 | 0.17 | 193 | 20 | Above 78 → Alcohol Vapor; auto-ignites at 363 |
+| Alcohol Vapor | Fuel vapor | 1.6 | 1,600 | 0.018 | 1 | 82 | Below 70 → Alcohol; auto-ignites at 363 |
 | Sodium | Metallic sodium | 968 | 1,230 | 142 | 119 | 20 | — |
 | Hydrogen | Hydrogen gas | 0.09 | 14,300 | 0.18 | 1 | 20 | Ignites at 45 |
 | Soil | Moist porous soil | 1,400 | 1,480 | 0.5 | 207 | 20 | — |
 | Foam | Firefighting foam | 120 | 2,800 | 0.08 | 34 | 20 | — |
+| Source | Indestructible utility block | 7,800 | 500 | 18 | 390 | 20 | — |
+
+Copper, Mercury, Foam, and direct-paint Ash remain registered only so existing version-6 saves
+load without losing cells. They are no longer offered in the Elements rail. Ash remains an
+emergent combustion product.
 
 Each transition has a latent-energy requirement. Excess temperature is consumed into progress
 and the cell remains at its threshold until continued energy transfer completes the conversion.
@@ -82,8 +89,9 @@ no lifetime deletion, so cooled vapor becomes Water instead of disappearing. Sto
 higher threshold than Lava freezes, which also prevents rapid oscillation.
 
 Blast resistance is separate from hardness so brittle Glass can resist corrosion yet shatter.
-Metal is highest at 1.2, followed by Stone at 0.95; Wood is 0.48, most liquids and powders are
-0.05–0.18, and energy/gas cells are zero.
+Source bypasses destruction entirely. Among destructible materials, Metal is highest at 1.2,
+followed by Stone at 0.95; Wood is 0.48, most liquids and powders are 0.05–0.18, and energy/gas
+cells are zero.
 
 ## Moisture network
 
@@ -154,23 +162,33 @@ Electrical behavior is property-driven rather than a list of Spark pair rules:
 | Material or condition | Base conductivity (0–255) | Electrical role |
 | --- | ---: | --- |
 | Spark | 255 | Short-lived 255-strength pulse source at room temperature |
-| Battery | 235 | Continuous 255-strength source |
-| Copper | 252 | Lowest-loss solid conductor |
-| Mercury | 235 | Dense mobile liquid conductor |
-| Metal | 225 | General solid conductor |
+| Battery | 255 | Full network pulse for 12 of every 30 ticks |
+| Metal | 255 | General solid conductor |
 | Salt Water | 215 | Conductive liquid; substantially stronger than Water |
 | Sodium | 170 | Conductive reactive powder |
-| Water | 38 | Weak conductor; intentionally does not behave like a heater target |
+| Water | 0 | Insulator in the game model; adding Salt creates the conductive liquid |
 | Rubber, dry Wood, dry Soil | 0 | Insulators |
 | Saturated porous material | Base + up to 150 | Moisture can create an otherwise absent conductive path |
 
-Charge uses a double-buffered maximum-signal field, so a pulse fans into every connected branch
-instead of choosing one neighbor. Each hop loses strength according to the weaker endpoint, and
-stored charge decays by 18 units per tick. The Charged status is a visual projection of charge at
-or above 32, not the canonical electrical state. Resistive heating is deliberately modest and
+Charge uses a fixed-size breadth-first traversal, so a pulse reaches every cell in every connected
+branch during the same simulation tick. Distance does not reduce charge inside this play space.
+The Charged status is a visual projection of the canonical field. Resistive heating is deliberately modest and
 still enters the capacity-aware thermal field. Contact with a sufficiently charged cell can ignite
 sensitive fuel: Gunpowder and Hydrogen are most sensitive, followed by Alcohol Vapor, Oil,
 Alcohol, and Coal.
+
+Source stores the first non-empty neighboring material ID that touches it. Every six ticks it
+uses the normal material initializer to emit one copy into a random neighboring empty cell. Its
+indestructible property bypasses explosion destruction, and it has no corrosive, combustible, or
+phase transition path. The Eraser and Clear command remain explicit user overrides.
+
+## Flow properties
+
+Liquid viscosity is normalized from 0–1 and directly controls maximum open horizontal travel per
+update. Alcohol (0.04), Water (0.10), Salt Water (0.12), Acid (0.18), and Oil (0.48) spread in that
+order; Lava (0.92) creeps one cell at a time. Gas dispersion is also normalized from 0–1. Smoke,
+Steam, Alcohol Vapor, and Hydrogen use increasingly strong lateral drift both while rising and
+when upward movement is blocked, preventing a motionless ceiling layer.
 
 ## Update rates and determinism
 
@@ -185,7 +203,6 @@ Alcohol, and Coal.
 The Time rate control changes only how quickly fixed steps accrue in real time: `½×`, `1×`, and
 `2×`. It does not enlarge a step or alter seeded update order, so a given tick count remains deterministic.
 
-Temperature and electricity use reusable double buffers so their passes do not depend on scan
-direction. Equal and opposite pair transfers conserve energy, including a fractional remainder
+Temperature and electricity use reusable fixed-size work buffers. Equal and opposite thermal pair transfers conserve energy, including a fractional remainder
 carried with moving particles. Material, lifetime/growth, charge, status, temperature, moisture,
 fuel, liquid mass, and latent progress remain separate typed-array channels.

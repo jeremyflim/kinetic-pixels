@@ -19,6 +19,7 @@ export interface World {
   thermalRemainder: Int32Array
   moistureDelta: Int16Array
   chargeNext: Uint8Array
+  electricalQueue: Int32Array
   electricalActive: boolean
   ambientTemperature: number
   tick: number
@@ -51,9 +52,14 @@ export interface MaterialProperties {
   density: number
   hardness: number
   friction: number
+  viscosity: number
+  dispersion: number
   electricalConductivity: number
   chargeSource: number
+  chargePulsePeriod: number
+  chargePulseDuration: number
   sparkSensitivity: number
+  indestructible: boolean
   corrosiveness: number
   initialTemperature: number
   massDensity: number

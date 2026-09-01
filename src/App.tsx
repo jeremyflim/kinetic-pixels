@@ -1,4 +1,4 @@
-import { Activity, Atom, Battery, Bomb, Bubbles, Cable, Circle, CirclePlay, Cloud, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, ScanSearch, Snowflake, Sparkles, Trash2, Trees, Waves, Wind, Zap } from 'lucide-react'
+import { Activity, Atom, Battery, Bomb, Box, Circle, CirclePlay, Cloud, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, ScanSearch, Snowflake, Sparkles, Trash2, Trees, Waves, Wind, Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MemoryCardDialog } from './MemoryCardDialog'
 import { AMBIENT_TEMPERATURE, MAXIMUM_ROOM_TEMPERATURE, MINIMUM_ROOM_TEMPERATURE } from './simulation/constants'
@@ -22,17 +22,14 @@ const ICONS: Record<string, typeof Sparkles> = {
   salt: Sparkles,
   'salt-water': Waves,
   coal: Gem,
-  ash: Cloud,
   rubber: Circle,
-  copper: Cable,
   battery: Battery,
-  mercury: Droplet,
   alcohol: FlaskConical,
   'alcohol-vapor': Cloud,
   sodium: Atom,
   hydrogen: Wind,
   soil: Mountain,
-  foam: Bubbles,
+  source: Box,
 }
 
 interface Point { x: number; y: number }
@@ -475,6 +472,9 @@ export function App() {
   const toolLabel = eraser ? 'Eraser' : currentMaterial?.label ?? 'Sand'
   const inspectedMaterial = inspection ? MATERIAL_BY_ID.get(inspection.materialId) : undefined
   const inspectedProperties = inspectedMaterial?.properties
+  const inspectedSourceMaterial = inspection?.materialId === MaterialId.Source && inspection.state > 0
+    ? MATERIAL_BY_ID.get(inspection.state)
+    : undefined
   const inspectedConditions = inspection
     ? [
         inspection.status & StatusFlag.Burning ? 'Burning' : '',
@@ -500,7 +500,7 @@ export function App() {
               return (
                 <button
                   key={material.id}
-                  className={`material-button ${selected ? 'selected' : ''} ${index === PAINTABLE_MATERIALS.length - 1 ? 'last-material' : ''}`}
+                  className={`material-button ${selected ? 'selected' : ''} ${PAINTABLE_MATERIALS.length % 2 === 1 && index === PAINTABLE_MATERIALS.length - 1 ? 'last-material' : ''}`}
                   aria-pressed={selected}
                   onClick={() => selectMaterial(material.id)}
                 >
@@ -589,11 +589,14 @@ export function App() {
                       <dt>Temperature</dt><dd>{inspection.temperature} °C</dd>
                       <dt>Condition</dt><dd>{inspectedConditions}</dd>
                       <dt>Electrical charge</dt><dd>{inspection.charge} / 255</dd>
-                      <dt>State channel</dt><dd>{inspection.state}</dd>
+                      <dt>{inspection.materialId === MaterialId.Source ? 'Source program' : 'State channel'}</dt>
+                      <dd>{inspection.materialId === MaterialId.Source ? inspectedSourceMaterial?.label ?? 'Touch material' : inspection.state}</dd>
                       <dt>Type</dt><dd>{inspectedProperties.phase} / {inspectedProperties.mobility}</dd>
                       <dt>Flow density</dt><dd>{inspectedProperties.density}</dd>
                       <dt>Hardness</dt><dd>{inspectedProperties.hardness}</dd>
                       <dt>Friction</dt><dd>{inspectedProperties.friction}</dd>
+                      <dt>Viscosity</dt><dd>{inspectedProperties.phase === 'liquid' ? inspectedProperties.viscosity : '—'}</dd>
+                      <dt>Gas dispersion</dt><dd>{inspectedProperties.phase === 'gas' ? inspectedProperties.dispersion : '—'}</dd>
                       <dt>Mass density</dt><dd>{inspectedProperties.massDensity} kg/m³</dd>
                       <dt>Specific heat</dt><dd>{inspectedProperties.specificHeatCapacity} J/kg·K</dd>
                       <dt>Conductivity</dt><dd>{inspectedProperties.thermalConductivity} W/m·K</dd>

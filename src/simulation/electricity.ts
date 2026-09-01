@@ -1,6 +1,7 @@
-import { addTemperature, MATERIAL_PROPERTIES, MaterialId, type MaterialIdValue, StatusFlag } from './materials'
-import type { World } from './types'
+import { addTemperature, MATERIAL_PROPERTIES, type MaterialIdValue, StatusFlag } from './materials'
+import type { MaterialProperties, World } from './types'
 
+const CHARGE_STRENGTH = 255
 const CHARGE_VISIBLE_THRESHOLD = 32
 
 export function effectiveElectricalConductivity(world: World, index: number): number {
@@ -10,48 +11,50 @@ export function effectiveElectricalConductivity(world: World, index: number): nu
   return Math.min(255, Math.round(properties.electricalConductivity + saturation * 150))
 }
 
-function connectionLoss(first: number, second: number): number {
-  return 1 + Math.ceil((255 - Math.min(first, second)) / 12)
+export function isChargeSourceActive(properties: MaterialProperties, tick: number): boolean {
+  if (properties.chargeSource <= 0) return false
+  if (properties.chargePulsePeriod <= 1) return true
+  return tick % properties.chargePulsePeriod < properties.chargePulseDuration
+}
+
+function enqueueConductiveNeighbor(world: World, index: number, tail: number): number {
+  if (world.chargeNext[index] > 0 || effectiveElectricalConductivity(world, index) <= 0) return tail
+  world.chargeNext[index] = CHARGE_STRENGTH
+  world.electricalQueue[tail] = index
+  return tail + 1
 }
 
 export function updateElectricity(world: World): void {
   if (!world.electricalActive) return
-  const current = world.charge
   const next = world.chargeNext
   next.fill(0)
-  let hasActivity = false
+  let head = 0
+  let tail = 0
+  let hasSource = false
 
-  for (let y = 0; y < world.height; y += 1) {
-    for (let x = 0; x < world.width; x += 1) {
-      const index = y * world.width + x
-      const materialId = world.material[index] as MaterialIdValue
-      const properties = MATERIAL_PROPERTIES[materialId]
-      const conductivity = effectiveElectricalConductivity(world, index)
-      let strength = properties.chargeSource
-      if (conductivity > 0 && current[index] > 0) strength = Math.max(strength, current[index] - 18)
-
-      if (conductivity > 0) {
-        const neighbors = [
-          x > 0 ? index - 1 : -1,
-          x + 1 < world.width ? index + 1 : -1,
-          y > 0 ? index - world.width : -1,
-          y + 1 < world.height ? index + world.width : -1,
-        ]
-        for (const neighbor of neighbors) {
-          if (neighbor < 0 || current[neighbor] === 0) continue
-          const neighborConductivity = effectiveElectricalConductivity(world, neighbor)
-          if (neighborConductivity <= 0) continue
-          strength = Math.max(strength, current[neighbor] - connectionLoss(conductivity, neighborConductivity))
-        }
-      }
-      next[index] = Math.max(0, strength)
-      if (next[index] > 0) hasActivity = true
-    }
+  for (let index = 0; index < world.material.length; index += 1) {
+    const properties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
+    if (properties.chargeSource <= 0) continue
+    hasSource = true
+    if (!isChargeSourceActive(properties, world.tick)) continue
+    next[index] = CHARGE_STRENGTH
+    world.electricalQueue[tail++] = index
   }
 
+  while (head < tail) {
+    const index = world.electricalQueue[head++]
+    const x = index % world.width
+    const y = Math.floor(index / world.width)
+    if (x > 0) tail = enqueueConductiveNeighbor(world, index - 1, tail)
+    if (x + 1 < world.width) tail = enqueueConductiveNeighbor(world, index + 1, tail)
+    if (y > 0) tail = enqueueConductiveNeighbor(world, index - world.width, tail)
+    if (y + 1 < world.height) tail = enqueueConductiveNeighbor(world, index + world.width, tail)
+  }
+
+  const previous = world.charge
   world.charge = next
-  world.chargeNext = current
-  world.electricalActive = hasActivity
+  world.chargeNext = previous
+  world.electricalActive = hasSource
   for (let index = 0; index < world.material.length; index += 1) {
     const charge = world.charge[index]
     const properties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
