@@ -72,6 +72,8 @@ the same way.
 - Select `½×`, `1×`, or `2×` to change how quickly fixed simulation steps accrue in wall time.
 - Scroll over the field to zoom toward the pointed cell, or use the full-height vertical control
   in the left bezel to select 100–400% zoom.
+- While zoomed in, hold the right mouse button and drag to pan around the field; the field
+  suppresses the browser context menu during this interaction.
 - Clear empties the world without changing the selected tool, radius, or play state.
 - Memory Card pauses the simulation and opens three local slots plus JSON import/export.
 

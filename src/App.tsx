@@ -23,6 +23,7 @@ const ICONS: Record<string, typeof Sparkles> = {
 
 interface Point { x: number; y: number }
 interface CameraState { zoom: number; offsetX: number; offsetY: number }
+interface PanGesture { pointerId: number; clientX: number; clientY: number }
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 4
@@ -70,6 +71,7 @@ export function App() {
   const pendingStroke = useRef<PendingStroke | null>(null)
   const strokeFrame = useRef<number | null>(null)
   const continuousStrokeFrame = useRef<number | null>(null)
+  const panGesture = useRef<PanGesture | null>(null)
   const inspectionPending = useRef(false)
   const latestInspectionRequest = useRef(0)
 
@@ -88,6 +90,7 @@ export function App() {
   const [camera, setCamera] = useState<CameraState>({ zoom: MIN_ZOOM, offsetX: 0, offsetY: 0 })
   const [simulationRate, setSimulationRate] = useState<SimulationRate>(1)
   const [ambientTemperature, setAmbientTemperature] = useState(AMBIENT_TEMPERATURE)
+  const [panning, setPanning] = useState(false)
 
   const requestInspection = useCallback((point: Point) => {
     if (inspectionPending.current) return
@@ -350,6 +353,14 @@ export function App() {
   }
 
   function onPointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (event.button === 2 && camera.zoom > MIN_ZOOM) {
+      event.preventDefault()
+      event.currentTarget.setPointerCapture(event.pointerId)
+      panGesture.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY }
+      setPanning(true)
+      setPreview(null)
+      return
+    }
     if (event.button !== 0 || !ready) return
     const point = pointFromClient(event.clientX, event.clientY, event.currentTarget)
     if (monitorMode && !monitoredPoint) {
@@ -374,6 +385,26 @@ export function App() {
   }
 
   function onPointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
+    const activePan = panGesture.current
+    if (activePan?.pointerId === event.pointerId) {
+      const deltaX = event.clientX - activePan.clientX
+      const deltaY = event.clientY - activePan.clientY
+      panGesture.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY }
+      const stageBounds = canvasStageRef.current?.getBoundingClientRect()
+      if (stageBounds && (deltaX !== 0 || deltaY !== 0)) {
+        setCamera((current) => {
+          const visibleWidth = GRID_WIDTH / current.zoom
+          const visibleHeight = GRID_HEIGHT / current.zoom
+          return {
+            ...current,
+            offsetX: Math.max(0, Math.min(GRID_WIDTH - visibleWidth, current.offsetX - deltaX / stageBounds.width * visibleWidth)),
+            offsetY: Math.max(0, Math.min(GRID_HEIGHT - visibleHeight, current.offsetY - deltaY / stageBounds.height * visibleHeight)),
+          }
+        })
+      }
+      event.preventDefault()
+      return
+    }
     const point = pointFromClient(event.clientX, event.clientY, event.currentTarget)
     setPreview(point)
     if (inspectMode) requestInspection(point)
@@ -383,7 +414,13 @@ export function App() {
     }
   }
 
-  function endPointer() {
+  function endPointer(event?: React.PointerEvent<HTMLCanvasElement>) {
+    if (panGesture.current && (!event || panGesture.current.pointerId === event.pointerId)) {
+      panGesture.current = null
+      setPanning(false)
+      if (event) event.preventDefault()
+      return
+    }
     pointerDown.current = false
     if (continuousStrokeFrame.current !== null) cancelAnimationFrame(continuousStrokeFrame.current)
     continuousStrokeFrame.current = null
@@ -479,7 +516,7 @@ export function App() {
                 onChange={(event) => setZoomAt(Number(event.target.value) / 100, 0.5, 0.5)}
               />
             </label>
-            <div ref={canvasStageRef} className="canvas-stage">
+            <div ref={canvasStageRef} className="canvas-stage" onContextMenu={(event) => event.preventDefault()}>
               <div
                 className="canvas-camera"
                 style={{
@@ -490,7 +527,7 @@ export function App() {
               >
                 <canvas
                   ref={canvasRef}
-                  className={`${inspectMode || monitorMode ? 'inspecting' : ''} ${monitorArmed ? 'monitor-armed' : ''}`.trim()}
+                  className={`${inspectMode || monitorMode ? 'inspecting' : ''} ${monitorArmed ? 'monitor-armed' : ''} ${panning ? 'panning' : ''}`.trim()}
                   width={GRID_WIDTH}
                   height={GRID_HEIGHT}
                   aria-label={`Interactive ${GRID_WIDTH} by ${GRID_HEIGHT} cell pixel physics field. Click, hold, or drag to paint the selected material.`}
@@ -499,7 +536,7 @@ export function App() {
                   onPointerMove={onPointerMove}
                   onPointerUp={endPointer}
                   onPointerCancel={endPointer}
-                  onPointerLeave={() => { setPreview(null); if (inspectMode) setInspection(null); if (!pointerDown.current) endPointer() }}
+                  onPointerLeave={() => { if (panGesture.current) return; setPreview(null); if (inspectMode) setInspection(null); if (!pointerDown.current) endPointer() }}
                 />
               {preview && !monitorArmed && (
                 <div
@@ -525,6 +562,7 @@ export function App() {
                 />
               )}
               </div>
+              {camera.zoom > MIN_ZOOM && <div className="pan-hint">Right-drag to pan</div>}
               {startup && <div className="startup-hint"><CirclePlay aria-hidden="true" /><span>Click to play</span></div>}
               {(inspectMode || monitorMode) && (
                 <aside className={`inspection-panel ${monitorMode ? 'monitoring' : ''}`} aria-live="polite" aria-label="Pixel inspection">

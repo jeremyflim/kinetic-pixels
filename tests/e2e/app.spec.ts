@@ -226,6 +226,39 @@ test('wheel zoom keeps the pointed cell anchored and the gauge can reset it', as
   expect(reset.width).toBeCloseTo(before.width, 0)
 })
 
+test('right-drag pans only while zoomed and suppresses the field context menu', async ({ page }) => {
+  const stage = page.locator('.canvas-stage')
+  const canvas = page.locator('canvas')
+  const camera = page.locator('.canvas-camera')
+  const hint = page.getByText('Right-drag to pan')
+  await expect(hint).toBeHidden()
+
+  await page.getByRole('slider', { name: 'Field zoom' }).fill('200')
+  await expect(hint).toBeVisible()
+  const contextPrevented = await canvas.evaluate((element) => {
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    element.dispatchEvent(event)
+    return event.defaultPrevented
+  })
+  expect(contextPrevented).toBe(true)
+
+  const stageBox = await stage.boundingBox()
+  if (!stageBox) throw new Error('Canvas stage did not render')
+  const leftBefore = Number.parseFloat(await camera.evaluate((element) => getComputedStyle(element).left))
+  await page.mouse.move(stageBox.x + stageBox.width / 2, stageBox.y + stageBox.height / 2)
+  await page.mouse.down({ button: 'right' })
+  await expect(canvas).toHaveCSS('cursor', 'grabbing')
+  await page.mouse.move(stageBox.x + stageBox.width / 2 + 60, stageBox.y + stageBox.height / 2 + 30, { steps: 4 })
+  await page.mouse.up({ button: 'right' })
+  const leftAfter = Number.parseFloat(await camera.evaluate((element) => getComputedStyle(element).left))
+  expect(leftAfter).toBeGreaterThan(leftBefore)
+  expect(await materialCount(page, 1)).toBe(0)
+  await expect(page.getByText('Click to play')).toBeVisible()
+
+  await page.getByRole('slider', { name: 'Field zoom' }).fill('100')
+  await expect(hint).toBeHidden()
+})
+
 test('momentary action buttons visibly press into the console', async ({ page }) => {
   const clear = await pressStyles(page, '.console-button.destructive')
   expect(clear.pressed.translate).not.toBe(clear.before.translate)

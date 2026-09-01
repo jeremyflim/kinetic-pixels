@@ -297,6 +297,7 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 }
 .canvas-stage canvas.inspecting { cursor: cell; }
 .canvas-stage canvas.monitor-armed { cursor: crosshair; }
+.canvas-stage canvas.panning { cursor: grabbing; }
 
 .zoom-gauge {
   position: absolute;
@@ -346,6 +347,24 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
   text-transform: uppercase;
 }
 .startup-hint svg { width: 1.2em; height: 1.2em; color: currentColor; }
+
+.pan-hint {
+  position: absolute;
+  z-index: 5;
+  left: 0.45cqw;
+  bottom: 0.4cqw;
+  padding: 0.18cqw 0.32cqw;
+  color: rgb(255 255 255 / 0.72);
+  background: rgb(48 41 61 / 0.62);
+  border-left: max(1px, 0.07cqw) solid rgb(69 230 189 / 0.7);
+  pointer-events: none;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: clamp(5px, 0.42cqw, 7px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+}
 
 .brush-preview {
   position: absolute;
