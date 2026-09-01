@@ -125,4 +125,13 @@ export interface CellInspection {
   fuel: number
   liquidMass: number
   phaseProgress: number
+  electricalConductivity: number
+  phaseTransitions: readonly CellInspectionPhaseTransition[]
+}
+
+export interface CellInspectionPhaseTransition {
+  direction: PhaseTransition['direction']
+  temperature: number
+  product: number
+  latentHeat: number
 }

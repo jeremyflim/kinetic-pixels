@@ -70,7 +70,10 @@ the same way.
 - Set Room temperature from −100–500°C to change the environmental baseline. Empty air moves
   toward that target, and ordinary newly painted materials begin at it; authored sources such as
   Fire, Lava, Ice, Steam, and Alcohol Vapor keep their characteristic starting temperatures.
-- Use `I` or See Stats to inspect live physical properties while preserving normal painting.
+- Use `I` or See Stats to open a context-sensitive pixel probe while preserving normal painting.
+  Its Live channel follows changing temperature, condition, fuel, moisture, charge, solution,
+  growth, lifetime, and phase progress when relevant; its Material channel keeps only the static
+  rules that explain the selected material's behavior.
 - Click Monitor, then select one cell without painting. Once pinned, the probe stays on that
   coordinate while every normal tool remains available; click Monitor again to remove it.
 - Select `½×`, `1×`, or `2×` to change how quickly fixed simulation steps accrue in wall time.
@@ -156,7 +159,7 @@ Playwright verifies the user-visible contract rather than internal React state.
 
 The current suite contains:
 
-- **57 Vitest tests** covering material behavior, electrical networks, aqueous dilution, flow
+- **61 Vitest tests** covering material behavior, electrical networks, aqueous dilution, flow
   properties, Source, heat and phase transitions, moisture, chemistry, sparse combustion residue,
   explosions, deterministic ordering, clearing, save migration, and serialization.
 - **28 Playwright tests** covering pointer and keyboard flows, Monitor states, time rate, paused

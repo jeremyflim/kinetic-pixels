@@ -438,7 +438,18 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 }
 .inspection-panel header b { color: var(--amber); white-space: nowrap; }
 .inspection-panel.monitoring { border-color: var(--amber); }
-.inspection-panel dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.13cqw 0.5cqw; margin: 0; }
+.inspection-channels { display: grid; gap: 0.38cqw; }
+.inspection-channel h3 {
+  margin: 0 0 0.18cqw;
+  color: var(--mint);
+  font: inherit;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.inspection-channel.channel-material h3 { color: var(--amber); }
+.inspection-channel dl { display: grid; gap: 0.13cqw; margin: 0; }
+.inspection-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5cqw; }
 .inspection-panel dt { min-width: 0; color: rgb(255 255 255 / 0.62); white-space: nowrap; }
 .inspection-panel dd { margin: 0; color: white; text-align: right; text-transform: capitalize; }
 .inspection-panel p { margin: 0.45cqw 0.15cqw; color: rgb(255 255 255 / 0.7); }

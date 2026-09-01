@@ -2,6 +2,9 @@
 
 import { clearWorld, createWorld, paintStroke, replaceWorld, snapshotWorld, stepWorld } from './engine'
 import { MAXIMUM_ROOM_TEMPERATURE, MINIMUM_ROOM_TEMPERATURE } from './constants'
+import { effectiveElectricalConductivity } from './electricity'
+import { MATERIAL_PROPERTIES, type MaterialIdValue } from './materials'
+import { resolvedPhaseTransitions } from './physics'
 import { renderWorld } from './render'
 import type { CellInspection, Snapshot, World } from './types'
 
@@ -112,6 +115,9 @@ self.onmessage = (event: MessageEvent<WorkerCommand>) => {
       fuel: world.fuel[index],
       liquidMass: world.liquidMass[index],
       phaseProgress: world.phaseProgress[index],
+      electricalConductivity: effectiveElectricalConductivity(world, index),
+      phaseTransitions: resolvedPhaseTransitions(world, index, MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue])
+        .map(({ direction, temperature, product, latentHeat }) => ({ direction, temperature, product, latentHeat })),
     }
     self.postMessage({ type: 'inspection', requestId: command.requestId, inspection })
   }

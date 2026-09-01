@@ -1,8 +1,9 @@
 import { Activity, Atom, Battery, Bomb, Box, Circle, CirclePlay, Cloud, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, ScanSearch, Snowflake, Sparkles, Trash2, Trees, Waves, Wind, Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { buildInspectionSections } from './inspection'
 import { MemoryCardDialog } from './MemoryCardDialog'
 import { AMBIENT_TEMPERATURE, MAXIMUM_ROOM_TEMPERATURE, MINIMUM_ROOM_TEMPERATURE } from './simulation/constants'
-import { isAqueousLiquid, MATERIAL_BY_ID, MaterialId, PAINTABLE_MATERIALS, solutionConcentration, StatusFlag } from './simulation/materials'
+import { MaterialId, PAINTABLE_MATERIALS } from './simulation/materials'
 import { GRID_HEIGHT, GRID_WIDTH, type CellInspection, type Snapshot } from './simulation/types'
 
 const ICONS: Record<string, typeof Sparkles> = {
@@ -470,18 +471,7 @@ export function App() {
 
   const currentMaterial = PAINTABLE_MATERIALS.find((material) => material.id === selectedMaterial)
   const toolLabel = eraser ? 'Eraser' : currentMaterial?.label ?? 'Sand'
-  const inspectedMaterial = inspection ? MATERIAL_BY_ID.get(inspection.materialId) : undefined
-  const inspectedProperties = inspectedMaterial?.properties
-  const inspectedSourceMaterial = inspection?.materialId === MaterialId.Source && inspection.state > 0
-    ? MATERIAL_BY_ID.get(inspection.state)
-    : undefined
-  const inspectedConditions = inspection
-    ? [
-        inspection.status & StatusFlag.Burning ? 'Burning' : '',
-        inspection.moisture > 0 ? 'Wet' : '',
-        inspection.status & StatusFlag.Charged ? 'Charged' : '',
-      ].filter(Boolean).join(', ') || 'Stable'
-    : ''
+  const inspectionSections = inspection ? buildInspectionSections(inspection) : []
   const monitorArmed = monitorMode && !monitoredPoint
   const reticlePoint = monitorMode ? monitoredPoint : inspectMode ? preview : null
 
@@ -583,41 +573,21 @@ export function App() {
               {(inspectMode || monitorMode) && (
                 <aside className={`inspection-panel ${monitorMode ? 'monitoring' : ''}`} aria-live="polite" aria-label="Pixel inspection">
                   <header><span>{monitorMode ? 'Pixel monitor' : 'Pixel probe'}</span><b>{inspection ? `${inspection.x}, ${inspection.y}` : monitorMode ? 'Click field' : 'Hover field'}</b></header>
-                  {inspection && inspectedProperties ? (
-                    <dl>
-                      <dt>Material</dt><dd>{inspection.materialId === MaterialId.Empty ? 'Air' : inspectedMaterial?.label}</dd>
-                      <dt>Temperature</dt><dd>{inspection.temperature} °C</dd>
-                      <dt>Condition</dt><dd>{inspectedConditions}</dd>
-                      <dt>Electrical charge</dt><dd>{inspection.charge} / 255</dd>
-                      <dt>{inspection.materialId === MaterialId.Source ? 'Source program' : 'State channel'}</dt>
-                      <dd>{inspection.materialId === MaterialId.Source ? inspectedSourceMaterial?.label ?? 'Touch material' : inspection.state}</dd>
-                      <dt>Type</dt><dd>{inspectedProperties.phase} / {inspectedProperties.mobility}</dd>
-                      <dt>Flow density</dt><dd>{inspectedProperties.density}</dd>
-                      <dt>Hardness</dt><dd>{inspectedProperties.hardness}</dd>
-                      <dt>Friction</dt><dd>{inspectedProperties.friction}</dd>
-                      <dt>Viscosity</dt><dd>{inspectedProperties.phase === 'liquid' ? inspectedProperties.viscosity : '—'}</dd>
-                      <dt>Gas dispersion</dt><dd>{inspectedProperties.phase === 'gas' ? inspectedProperties.dispersion : '—'}</dd>
-                      <dt>Mass density</dt><dd>{inspectedProperties.massDensity} kg/m³</dd>
-                      <dt>Specific heat</dt><dd>{inspectedProperties.specificHeatCapacity} J/kg·K</dd>
-                      <dt>Conductivity</dt><dd>{inspectedProperties.thermalConductivity} W/m·K</dd>
-                      <dt>Thermal mass</dt><dd>{inspectedProperties.heatCapacity} units/K</dd>
-                      <dt>Moisture</dt><dd>{inspection.moisture} / {inspectedProperties.moistureCapacity}</dd>
-                      <dt>Fuel</dt><dd>{inspection.fuel} / {inspectedProperties.fuel}</dd>
-                      {isAqueousLiquid(inspection.materialId) && inspection.materialId !== MaterialId.Water && (
-                        <><dt>Solution strength</dt><dd>{Math.round(solutionConcentration(inspection.materialId, inspection.state) / 255 * 100)}%</dd></>
-                      )}
-                      <dt>Burn rate</dt><dd>{inspectedProperties.fuel > 0 ? `${inspectedProperties.burnRate} fuel/tick` : '—'}</dd>
-                      <dt>Combustion energy</dt><dd>{inspectedProperties.fuel > 0 ? inspectedProperties.combustionHeat : '—'}</dd>
-                      <dt>Heat output</dt><dd>{inspectedProperties.heatEmission || '—'}</dd>
-                      <dt>Ash yield</dt><dd>{inspectedProperties.ashYield > 0 ? `${Math.round(inspectedProperties.ashYield * 100)}%` : '—'}</dd>
-                      <dt>Liquid mass</dt><dd>{inspection.liquidMass}</dd>
-                      <dt>Phase progress</dt><dd>{inspection.phaseProgress}</dd>
-                      <dt>Ignition</dt><dd>{inspectedProperties.ignitionTemperature === null ? '—' : `${inspectedProperties.ignitionTemperature} °C`}</dd>
-                      <dt>Explosion</dt><dd>{inspectedProperties.explosionRadius > 0 ? `${inspectedProperties.explosionRadius} cells / ${inspectedProperties.explosionPressure}` : '—'}</dd>
-                      <dt>Blast resistance</dt><dd>{inspectedProperties.blastResistance}</dd>
-                      <dt>Electrical conduction</dt><dd>{Math.round(inspectedProperties.electricalConductivity / 255 * 100)}%</dd>
-                      <dt>Corrosiveness</dt><dd>{inspectedProperties.corrosiveness}</dd>
-                    </dl>
+                  {inspectionSections.length > 0 ? (
+                    <div className="inspection-channels">
+                      {inspectionSections.map((section) => (
+                        <section className={`inspection-channel channel-${section.label.toLowerCase()}`} key={section.label}>
+                          <h3>{section.label}</h3>
+                          <dl>
+                            {section.rows.map((row) => (
+                              <div className="inspection-row" key={row.label}>
+                                <dt>{row.label}</dt><dd>{row.value}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </section>
+                      ))}
+                    </div>
                   ) : <p>{monitorMode ? 'Click a pixel to pin its live channel.' : 'Move across the field to read a cell.'}</p>}
                 </aside>
               )}

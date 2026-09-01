@@ -51,7 +51,7 @@ function exchangeTemperature(world: World, first: number, second: number): void 
   world.temperatureDelta[second] += energy
 }
 
-function activePhaseTransition(world: World, index: number, materialProperties: MaterialProperties): PhaseTransition | undefined {
+export function resolvedPhaseTransitions(world: World, index: number, materialProperties: MaterialProperties): readonly PhaseTransition[] {
   const materialId = world.material[index] as MaterialIdValue
   let transitions = materialProperties.phaseTransitions
   if (materialId === MaterialId.Alcohol) {
@@ -74,7 +74,11 @@ function activePhaseTransition(world: World, index: number, materialProperties: 
     const strength = solutionStrength(materialId, world.state[index])
     transitions = materialProperties.phaseTransitions.map((transition) => ({ ...transition, temperature: Math.round(100 + strength * 8) }))
   }
-  return transitions.find((candidate) => candidate.direction === 'above'
+  return transitions
+}
+
+function activePhaseTransition(world: World, index: number, materialProperties: MaterialProperties): PhaseTransition | undefined {
+  return resolvedPhaseTransitions(world, index, materialProperties).find((candidate) => candidate.direction === 'above'
     ? world.temperature[index] >= candidate.temperature
     : world.temperature[index] <= candidate.temperature)
 }
