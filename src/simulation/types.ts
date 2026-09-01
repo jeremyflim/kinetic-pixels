@@ -8,6 +8,7 @@ export interface World {
   material: Uint8Array
   state: Uint16Array
   status: Uint8Array
+  charge: Uint8Array
   temperature: Int16Array
   moisture: Uint8Array
   fuel: Uint8Array
@@ -17,6 +18,8 @@ export interface World {
   temperatureDelta: Int32Array
   thermalRemainder: Int32Array
   moistureDelta: Int16Array
+  chargeNext: Uint8Array
+  electricalActive: boolean
   ambientTemperature: number
   tick: number
   seed: number
@@ -48,7 +51,9 @@ export interface MaterialProperties {
   density: number
   hardness: number
   friction: number
-  conductivity: boolean
+  electricalConductivity: number
+  chargeSource: number
+  sparkSensitivity: number
   corrosiveness: number
   initialTemperature: number
   massDensity: number
@@ -63,6 +68,9 @@ export interface MaterialProperties {
   combustionHeat: number
   heatEmission: number
   smokeYield: number
+  burnProduct: number | null
+  extinguishingPower: number
+  plantNutrition: number
   explosionRadius: number
   explosionHeat: number
   explosionPressure: number
@@ -90,6 +98,7 @@ export interface Snapshot {
   material: Uint8Array
   state: Uint16Array
   status: Uint8Array
+  charge: Uint8Array
   temperature: Int16Array
   moisture: Uint8Array
   fuel: Uint8Array
@@ -103,6 +112,7 @@ export interface CellInspection {
   materialId: number
   state: number
   status: number
+  charge: number
   temperature: number
   moisture: number
   fuel: number

@@ -54,14 +54,17 @@ test('starts with the wooden title, Sand, paused state, and instruction', async 
 
 test('shows the complete paintable material palette inside the element rail', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 576 })
-  const expected = ['Sand', 'Water', 'Stone', 'Wood', 'Fire', 'Oil', 'Plant', 'Acid', 'Metal', 'Lava', 'Ice', 'Spark', 'Gunpowder']
+  const expected = [
+    'Sand', 'Water', 'Stone', 'Wood', 'Fire', 'Oil', 'Plant', 'Acid', 'Metal', 'Lava', 'Ice', 'Spark', 'Gunpowder',
+    'Salt', 'Salt Water', 'Coal', 'Ash', 'Rubber', 'Copper', 'Battery', 'Mercury', 'Alcohol', 'Alcohol Vapor', 'Sodium', 'Hydrogen', 'Soil', 'Foam',
+  ]
   const buttons = page.locator('.material-button')
   await expect(buttons).toHaveCount(expected.length)
-  for (const label of expected) await expect(page.getByRole('button', { name: label })).toBeVisible()
+  await expect(buttons).toHaveText(expected)
 
   const railBox = await page.locator('.left-rail').boundingBox()
   if (!railBox) throw new Error('Element rail did not render')
-  for (const button of await buttons.all()) {
+  for (const button of await buttons.all().then((items) => items.slice(0, 4))) {
     const box = await button.boundingBox()
     if (!box) throw new Error('Material button did not render')
     expect(box.x).toBeGreaterThanOrEqual(railBox.x)
@@ -69,17 +72,23 @@ test('shows the complete paintable material palette inside the element rail', as
     expect(box.x + box.width).toBeLessThanOrEqual(railBox.x + railBox.width)
     expect(box.y + box.height).toBeLessThanOrEqual(railBox.y + railBox.height)
   }
+  const grid = page.locator('.material-grid')
+  expect(await grid.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true)
+  const markBefore = await page.locator('.rail-mark').boundingBox()
+  await page.getByRole('button', { name: 'Foam' }).scrollIntoViewIfNeeded()
+  await expect(page.getByRole('button', { name: 'Foam' })).toBeVisible()
   const lastButtonBox = await buttons.last().boundingBox()
-  const leftColumnButtonBox = await page.getByRole('button', { name: 'Stone' }).boundingBox()
+  const leftColumnButtonBox = await page.getByRole('button', { name: 'Hydrogen' }).boundingBox()
   const markBox = await page.locator('.rail-mark').boundingBox()
-  if (!lastButtonBox || !leftColumnButtonBox || !markBox) throw new Error('Palette footer did not render')
+  if (!lastButtonBox || !leftColumnButtonBox || !markBox || !markBefore) throw new Error('Palette footer did not render')
   expect(lastButtonBox.x).toBeCloseTo(leftColumnButtonBox.x, 1)
   expect(lastButtonBox.width).toBeCloseTo(leftColumnButtonBox.width, 1)
   expect(lastButtonBox.y + lastButtonBox.height).toBeLessThanOrEqual(markBox.y)
+  expect(markBox.y).toBeCloseTo(markBefore.y, 1)
 
-  await page.getByRole('button', { name: 'Gunpowder' }).click()
-  await expect(page.getByRole('button', { name: 'Gunpowder' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByText('Gunpowder', { exact: true }).last()).toBeVisible()
+  await page.getByRole('button', { name: 'Foam' }).click()
+  await expect(page.getByRole('button', { name: 'Foam' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByText('Foam', { exact: true }).last()).toBeVisible()
 })
 
 test('clearly separates the playable canvas from its dark bezel', async ({ page }) => {
@@ -130,7 +139,7 @@ test('Monitor arms without painting, then stays pinned while normal controls and
   const panel = page.getByLabel('Pixel inspection')
   await expect(panel).toBeVisible()
   const firstCoordinate = await panel.locator('header b').textContent()
-  await page.getByRole('button', { name: 'Water' }).click()
+  await page.getByRole('button', { name: 'Water', exact: true }).click()
   await page.getByRole('button', { name: /Play|Pause/ }).click()
   await page.getByRole('button', { name: '2×' }).click()
   await expect(panel.locator('header b')).toHaveText(firstCoordinate ?? '')
@@ -146,7 +155,7 @@ test('Monitor arms without painting, then stays pinned while normal controls and
   await expect(monitor).toHaveAttribute('aria-pressed', 'false')
 
   await monitor.click()
-  await page.getByRole('button', { name: 'Oil' }).click()
+  await page.getByRole('button', { name: 'Oil', exact: true }).click()
   await expect(monitor).toHaveAttribute('aria-pressed', 'false')
   await expect(panel).toBeHidden()
 })

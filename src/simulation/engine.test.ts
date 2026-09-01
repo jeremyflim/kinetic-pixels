@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { AMBIENT_TEMPERATURE, THERMAL_ENERGY_UNIT_J_M3 } from './constants'
 import { clearWorld, createWorld, paintCircle, paintStroke, replaceWorld, snapshotWorld, stepWorld } from './engine'
+import { effectiveElectricalConductivity, updateElectricity } from './electricity'
 import {
   FIRE_LIFETIME_MIN,
   MATERIALS,
@@ -61,8 +62,8 @@ describe('material model', () => {
       expect(properties.heatEmission).toBeGreaterThanOrEqual(0)
       expect(properties.moistureCapacity).toBeGreaterThanOrEqual(0)
     }
-    expect(MATERIAL_REACTIONS.length).toBe(4)
-    expect(MATERIAL_REACTIONS.every((reaction) => reaction.materials.includes(MaterialId.Acid))).toBe(true)
+    expect(MATERIAL_REACTIONS.length).toBe(9)
+    expect(MATERIAL_REACTIONS.filter((reaction) => !reaction.materials.includes(MaterialId.Acid))).toHaveLength(3)
     expect(reactMaterialPair(createWorld(1, false, 2, 1), 0, 1)).toBe(false)
   })
 
@@ -481,7 +482,7 @@ describe('moisture and combustion', () => {
   })
 })
 
-describe('specific chemistry and existing electricity', () => {
+describe('specific chemistry and electrical networks', () => {
   it('heats Acid through the shared solver and boils it into vapor with sustained energy', () => {
     const world = createWorld(28, false, 2, 1)
     const acid = place(world, 0, 0, MaterialId.Acid)
@@ -509,14 +510,90 @@ describe('specific chemistry and existing electricity', () => {
     expect(reactMaterialPair(world, acid, glass)).toBe(false)
   })
 
-  it('preserves current Spark-to-Metal charging behavior', () => {
-    const world = createWorld(29, false, 3, 5)
-    const metal = place(world, 1, 2, MaterialId.Metal)
-    const spark = place(world, 1, 3, MaterialId.Spark)
-    world.state[spark] = 4
-    stepWorld(world)
-    expect(world.material.includes(MaterialId.Spark)).toBe(false)
-    expect(world.status[metal] & StatusFlag.Charged).toBe(StatusFlag.Charged)
+  it('fans a Spark pulse through every branch of a conductive network without acting as a heater', () => {
+    const world = createWorld(29, false, 5, 5)
+    const spark = place(world, 0, 2, MaterialId.Spark)
+    const branches = [place(world, 1, 2, MaterialId.Metal), place(world, 2, 2, MaterialId.Copper), place(world, 2, 1, MaterialId.Copper), place(world, 2, 3, MaterialId.Copper)]
+    const startingTemperature = world.temperature[spark]
+    for (let tick = 0; tick < 5; tick += 1) updateElectricity(world)
+    expect(branches.every((cell) => world.charge[cell] > 0)).toBe(true)
+    expect(branches.every((cell) => world.status[cell] & StatusFlag.Charged)).toBe(true)
+    expect(world.temperature[spark]).toBe(startingTemperature)
+  })
+
+  it('treats Battery as a continuous source and Rubber as an insulator', () => {
+    const world = createWorld(31, false, 7, 3)
+    place(world, 0, 1, MaterialId.Battery)
+    const beforeRubber = place(world, 1, 1, MaterialId.Copper)
+    place(world, 2, 1, MaterialId.Rubber)
+    const afterRubber = place(world, 3, 1, MaterialId.Copper)
+    for (let tick = 0; tick < 20; tick += 1) updateElectricity(world)
+    expect(world.charge[beforeRubber]).toBeGreaterThan(0)
+    expect(world.charge[afterRubber]).toBe(0)
+  })
+
+  it('conducts far better through salt water and moisture-saturated wood than through dry wood', () => {
+    const world = createWorld(32, false, 3, 2)
+    const dryWood = place(world, 0, 0, MaterialId.Wood)
+    const wetWood = place(world, 1, 0, MaterialId.Wood)
+    world.moisture[wetWood] = MATERIAL_PROPERTIES[MaterialId.Wood].moistureCapacity
+    const water = place(world, 0, 1, MaterialId.Water)
+    const saltWater = place(world, 1, 1, MaterialId.SaltWater)
+    expect(effectiveElectricalConductivity(world, dryWood)).toBe(0)
+    expect(effectiveElectricalConductivity(world, wetWood)).toBeGreaterThan(0)
+    expect(effectiveElectricalConductivity(world, saltWater)).toBeGreaterThan(effectiveElectricalConductivity(world, water))
+  })
+
+  it('uses electrical sensitivity to ignite gunpowder through a wire', () => {
+    const world = createWorld(33, false, 5, 1)
+    place(world, 0, 0, MaterialId.Battery)
+    place(world, 1, 0, MaterialId.Copper)
+    const gunpowder = place(world, 2, 0, MaterialId.Gunpowder)
+    for (let tick = 0; tick < 5; tick += 1) updateElectricity(world)
+    expect(world.status[gunpowder] & StatusFlag.Burning).toBe(StatusFlag.Burning)
+
+    const oilWorld = createWorld(331, false, 2, 1)
+    place(oilWorld, 0, 0, MaterialId.Spark)
+    const oil = place(oilWorld, 1, 0, MaterialId.Oil)
+    updateElectricity(oilWorld)
+    expect(oilWorld.status[oil] & StatusFlag.Burning).toBe(StatusFlag.Burning)
+  })
+
+  it('keeps new chemistry explicit: salt dissolves and sodium releases hot hydrogen', () => {
+    const saltWorld = createWorld(34, false, 2, 1)
+    const salt = place(saltWorld, 0, 0, MaterialId.Salt)
+    const water = place(saltWorld, 1, 0, MaterialId.Water)
+    for (let attempt = 0; attempt < 600 && saltWorld.material[salt] === MaterialId.Salt; attempt += 1) reactMaterialPair(saltWorld, salt, water)
+    expect([...saltWorld.material]).toEqual([MaterialId.SaltWater, MaterialId.SaltWater])
+
+    const sodiumWorld = createWorld(35, false, 2, 1)
+    const sodium = place(sodiumWorld, 0, 0, MaterialId.Sodium)
+    const secondWater = place(sodiumWorld, 1, 0, MaterialId.Water)
+    for (let attempt = 0; attempt < 600 && sodiumWorld.material[sodium] === MaterialId.Sodium; attempt += 1) reactMaterialPair(sodiumWorld, sodium, secondWater)
+    expect(sodiumWorld.material[sodium]).toBe(MaterialId.Fire)
+    expect(sodiumWorld.material[secondWater]).toBe(MaterialId.Hydrogen)
+    expect(sodiumWorld.temperature[sodium]).toBe(900)
+    expect(sodiumWorld.temperature[secondWater]).toBe(500)
+  })
+
+  it('reuses shared combustion residue, extinguishing, and plant nutrition behavior', () => {
+    const coalWorld = createWorld(36, false, 1, 1)
+    const coal = place(coalWorld, 0, 0, MaterialId.Coal, 500)
+    coalWorld.status[coal] |= StatusFlag.Burning
+    step(coalWorld, 260)
+    expect(coalWorld.material[coal]).toBe(MaterialId.Ash)
+
+    const foamWorld = createWorld(37, false, 2, 1)
+    place(foamWorld, 0, 0, MaterialId.Foam)
+    const fire = place(foamWorld, 1, 0, MaterialId.Fire)
+    step(foamWorld, 40)
+    expect(foamWorld.material[fire]).not.toBe(MaterialId.Fire)
+
+    const garden = createWorld(38, false, 3, 2)
+    place(garden, 0, 1, MaterialId.Soil)
+    place(garden, 1, 1, MaterialId.Plant)
+    step(garden, 130)
+    expect([...garden.material].filter((material) => material === MaterialId.Plant).length).toBeGreaterThan(1)
   })
 })
 
@@ -535,6 +612,7 @@ describe('world commands and persistence', () => {
     const world = createWorld(12)
     world.state.fill(99)
     world.status.fill(StatusFlag.Wet)
+    world.charge.fill(255)
     world.temperature.fill(900)
     world.moisture.fill(200)
     world.fuel.fill(100)
@@ -544,6 +622,7 @@ describe('world commands and persistence', () => {
     expect(world.material.every((value) => value === 0)).toBe(true)
     expect(world.state.every((value) => value === 0)).toBe(true)
     expect(world.status.every((value) => value === 0)).toBe(true)
+    expect(world.charge.every((value) => value === 0)).toBe(true)
     expect(world.temperature.every((value) => value === AMBIENT_TEMPERATURE)).toBe(true)
     expect(world.moisture.every((value) => value === 0)).toBe(true)
     expect(world.fuel.every((value) => value === 0)).toBe(true)
@@ -573,13 +652,24 @@ describe('world commands and persistence', () => {
     expect(world.temperature[0]).toBeLessThan(100)
   })
 
-  it('round-trips save version 5 exactly', () => {
+  it('round-trips save version 6 exactly', () => {
     const world = createWorld(13)
     world.tick = 12_345
+    world.charge[0] = 213
     const serialized = serializeSnapshot(snapshotWorld(world), 'FIRE TEST', '2026-08-31T00:00:00.000Z')
     const parsed = parseSave(serialized)
     expect(parsed.snapshot).toEqual(snapshotWorld(world))
+    expect(parsed.file.version).toBe(6)
+  })
+
+  it('loads version 5 saves with a zeroed electrical channel', () => {
+    const world = createWorld(131)
+    const current = serializeSnapshot(snapshotWorld(world), 'V5 SAVE', '2026-08-31T00:00:00.000Z')
+    const { charge: _charge, ...simulation } = current.simulation
+    const legacy = { ...current, version: 5, simulation }
+    const parsed = parseSave(legacy)
     expect(parsed.file.version).toBe(5)
+    expect(parsed.snapshot.charge.every((value) => value === 0)).toBe(true)
   })
 
   it('loads version 4 saves with 16-bit phase progress', () => {

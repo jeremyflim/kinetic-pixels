@@ -3,7 +3,7 @@ import { MATERIAL_BY_ID, MATERIAL_PROPERTIES, MaterialId, type MaterialIdValue, 
 import { CELL_COUNT, GRID_HEIGHT, GRID_WIDTH, type Snapshot } from './types'
 
 export const SAVE_FORMAT = 'kinetic-pixels'
-export const SAVE_VERSION = 5
+export const SAVE_VERSION = 6
 export const MAX_IMPORT_BYTES = 2_000_000
 
 interface SaveFileBase {
@@ -44,11 +44,16 @@ export interface SaveFileV4 extends SaveFileBase {
 }
 
 export interface SaveFileV5 extends SaveFileBase {
-  version: typeof SAVE_VERSION
+  version: 5
   simulation: SaveFileV4['simulation']
 }
 
-export type SaveFile = SaveFileV2 | SaveFileV3 | SaveFileV4 | SaveFileV5
+export interface SaveFileV6 extends SaveFileBase {
+  version: typeof SAVE_VERSION
+  simulation: SaveFileV5['simulation'] & { charge: string }
+}
+
+export type SaveFile = SaveFileV2 | SaveFileV3 | SaveFileV4 | SaveFileV5 | SaveFileV6
 
 const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 const LEGACY_BURNING_FLAG = 0x8000
@@ -133,7 +138,7 @@ export function sanitizeSaveName(value: string, fallback: string): string {
   return value.trim().slice(0, 24) || fallback
 }
 
-export function serializeSnapshot(snapshot: Snapshot, name: string, savedAt = new Date().toISOString()): SaveFileV5 {
+export function serializeSnapshot(snapshot: Snapshot, name: string, savedAt = new Date().toISOString()): SaveFileV6 {
   return {
     format: SAVE_FORMAT,
     version: SAVE_VERSION,
@@ -145,6 +150,7 @@ export function serializeSnapshot(snapshot: Snapshot, name: string, savedAt = ne
       material: bytesToBase64(snapshot.material),
       state: bytesToBase64(uint16ToBytes(snapshot.state)),
       status: bytesToBase64(snapshot.status),
+      charge: bytesToBase64(snapshot.charge),
       temperature: bytesToBase64(int16ToBytes(snapshot.temperature)),
       moisture: bytesToBase64(snapshot.moisture),
       fuel: bytesToBase64(snapshot.fuel),
@@ -212,7 +218,7 @@ function migrateLegacyFields(material: Uint8Array, status: Uint8Array, legacyHea
 export function parseSave(input: unknown): { file: SaveFile; snapshot: Snapshot } {
   const root = record(input)
   if (root.format !== SAVE_FORMAT) throw new Error('Not a Kinetic Pixels save')
-  if (root.version !== 2 && root.version !== 3 && root.version !== 4 && root.version !== SAVE_VERSION) throw new Error('Unsupported save version')
+  if (root.version !== 2 && root.version !== 3 && root.version !== 4 && root.version !== 5 && root.version !== SAVE_VERSION) throw new Error('Unsupported save version')
   const grid = record(root.grid)
   if (grid.width !== GRID_WIDTH || grid.height !== GRID_HEIGHT) throw new Error('Save grid dimensions do not match')
   const simulation = record(root.simulation)
@@ -229,13 +235,13 @@ export function parseSave(input: unknown): { file: SaveFile; snapshot: Snapshot 
   }
 
   let fields: Pick<Snapshot, 'temperature' | 'moisture' | 'fuel' | 'liquidMass' | 'phaseProgress'>
-  if (root.version === 4 || root.version === SAVE_VERSION) {
+  if (root.version === 4 || root.version === 5 || root.version === SAVE_VERSION) {
     fields = {
       temperature: bytesToInt16(validateWordBytes(simulation.temperature, 'Temperature')),
       moisture: validateByteField(simulation.moisture, 'Moisture'),
       fuel: validateByteField(simulation.fuel, 'Fuel'),
       liquidMass: validateByteField(simulation.liquidMass, 'Liquid mass'),
-      phaseProgress: root.version === SAVE_VERSION
+      phaseProgress: root.version === 5 || root.version === SAVE_VERSION
         ? bytesToUint32(validateDwordBytes(simulation.phaseProgress, 'Phase progress'))
         : Uint32Array.from(bytesToUint16(validateWordBytes(simulation.phaseProgress, 'Phase progress'))),
     }
@@ -257,6 +263,7 @@ export function parseSave(input: unknown): { file: SaveFile; snapshot: Snapshot 
     material,
     state,
     status,
+    charge: root.version === SAVE_VERSION ? validateByteField(simulation.charge, 'Charge') : new Uint8Array(CELL_COUNT),
     ...fields,
   }
   return { file: root as unknown as SaveFile, snapshot }

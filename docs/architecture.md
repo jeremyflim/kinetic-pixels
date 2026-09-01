@@ -11,7 +11,7 @@ core has no React, DOM, worker, or canvas dependencies.
 - `MATERIAL_PROPERTIES` is the authoritative table for intrinsic physical behavior.
 - `MATERIAL_REACTIONS` contains only identity-specific chemistry. Unlisted pairs still exchange
   temperature, moisture, charge, or position through shared property-driven systems.
-- The world uses parallel typed arrays for material, progress/lifetime/charge state, status flags,
+- The world uses parallel typed arrays for material, per-material progress/lifetime state, electrical charge, status flags,
   temperature, moisture, fuel, liquid mass, 32-bit phase progress, fractional thermal-energy
   remainder, and last-updated tick.
 - Simulation randomness comes only from the serialized seeded PRNG.
@@ -32,7 +32,7 @@ Every material declares a phase (`vacuum`, `solid`, `liquid`, `gas`, or `energy`
 which keeps immovable and movable solids distinct without special-casing their IDs.
 
 Gameplay density controls displacement, friction controls drift and liquid reach, hardness resists
-Acid, electrical conductivity routes the current Spark charge behavior, and corrosiveness scales
+Acid, electrical conductivity controls charge loss, and corrosiveness scales
 corrosion. Separate SI-like thermal fields declare representative mass density `ρ` (kg/m³),
 specific heat `c` (J/kg·K), and thermal conductivity `k` (W/m·K).
 
@@ -45,7 +45,7 @@ solid contact. Spatial scale and elapsed physical time are gameplay-accelerated 
 parameters; the capacity ratios and energy balance remain physically grounded.
 
 Every cell—including empty air—retains an integer Celsius temperature. Empty air also exchanges
-8% of its temperature-difference energy with an implicit 20°C environment on each 30 Hz thermal
+8% of its temperature-difference energy with the adjustable room-temperature environment on each 30 Hz thermal
 pass. Local air conduction still works, but heat no longer persists across long air chains.
 
 Phase transitions are material properties with directional thresholds and latent energy.
@@ -57,27 +57,45 @@ outcomes. Water retains its real relative capacity while vaporization latent ene
 cooling-side latent requirement, so it persists until it condenses. Moisture absorption and diffusion use capacity and permeability properties; finite
 Water mass is spent as porous cells become wet. Evaporation consumes temperature.
 
-Material identity answers what a cell is. `state` stores lifetime, growth, or the existing charge
-budget; `status` stores `Burning` and `Charged`; separate arrays store temperature, moisture,
+Material identity answers what a cell is. `state` stores material-local lifetime or growth;
+`status` stores `Burning` and the display-facing `Charged` flag; separate arrays store charge, temperature, moisture,
 remaining fuel, liquid mass, and latent phase progress. The legacy `Wet` flag exists only for
 save migration and is derived from moisture during simulation.
 
 Combustion begins from temperature and dryness, consumes fuel, and returns heat to the shared
 field. Fire and burning fuels also inject fixed local energy into neighboring cells; target heat
-capacity therefore still determines the resulting temperature rise. Fire-to-Wood, Wood-to-Wood, Water-to-Fire, and Lava-to-Water pair outcomes are not present.
-The sparse registry currently contains only Acid corrosion and dilution. Plant growth remains a
-biological material behavior.
+capacity therefore still determines the resulting temperature rise. A material can configure a
+residue, allowing Wood, Plant, Coal, and Rubber to leave Ash through the same combustion path.
+Fire-to-Wood, Wood-to-Wood, Water-to-Fire, and Lava-to-Water pair outcomes are not present.
+The sparse registry is limited to identity-specific chemistry. Plant growth remains a biological
+behavior driven by a shared nutrition property on Water, Salt Water, and Soil.
+
+## Electricity
+
+Electricity has its own canonical `Uint8Array` charge channel plus a transient double buffer, so
+it never competes with lifetime, growth, or phase state. Each 60 Hz pass computes a new field from
+the previous one. Sources inject strength, conductive cardinal neighbors propagate the strongest
+available signal with property-driven loss, and stored charge decays. Using the previous field for
+the complete pass makes branched networks deterministic and independent of scan direction.
+
+Spark is a short-lived ambient-temperature charge source; it does not masquerade as Fire or add a
+fixed temperature increase to adjacent Water. Battery is a continuous source. Metal and Copper
+carry charge efficiently, Mercury and Salt Water permit moving conductive paths, and Rubber and
+dry porous solids block it. Moisture saturation adds conductivity to porous materials, which makes
+wet Wood and Soil electrically different from their dry forms. Resistive heat is intentionally
+small and capacity-aware. A reusable sensitivity property lets sufficiently charged conductors arc
+into Gunpowder, Coal, Alcohol, Alcohol Vapor, or Hydrogen without dedicated Spark pair rules.
 
 Explosive materials declare radius, heat, and pressure. The generic explosion solver deposits
 heat by distance, compares pressure with each target's blast resistance, and leaves hot air when
 matter is destroyed. Other explosive cells receive ignition energy instead of being deleted, so
 chains use the same data model rather than a Gunpowder-to-Gunpowder pair reaction.
 
-Movement and combustion update at 60 Hz, temperature and phase behavior at 30 Hz, and moisture
+Movement, combustion, and electricity update at 60 Hz, temperature and phase behavior at 30 Hz, and moisture
 and active heat emission at 10 Hz of simulation time. Emitted energy is batched without changing
 its per-second total. The worker accrues those unchanged fixed steps at `½×`, `1×`, or `2×`
-wall-clock rate. Version 5 saves serialize 32-bit latent progress along with the other canonical arrays.
-Versions 2–4 remain accepted; legacy burning, Wet, heat, and 16-bit phase values migrate before
+wall-clock rate. Version 6 saves serialize charge and 32-bit latent progress with the other canonical arrays.
+Versions 2–5 remain accepted; legacy burning, Wet, heat, and 16-bit phase values migrate before
 replacement. Fractional thermal remainder is transient solver state and resets at a save boundary.
 
 ## Worker protocol

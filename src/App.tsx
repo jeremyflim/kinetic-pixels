@@ -1,4 +1,4 @@
-import { Activity, Bomb, CirclePlay, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, ScanSearch, Snowflake, Sparkles, Trash2, Trees, Zap } from 'lucide-react'
+import { Activity, Atom, Battery, Bomb, Bubbles, Cable, Circle, CirclePlay, Cloud, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, ScanSearch, Snowflake, Sparkles, Trash2, Trees, Waves, Wind, Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MemoryCardDialog } from './MemoryCardDialog'
 import { AMBIENT_TEMPERATURE, MAXIMUM_ROOM_TEMPERATURE, MINIMUM_ROOM_TEMPERATURE } from './simulation/constants'
@@ -19,6 +19,20 @@ const ICONS: Record<string, typeof Sparkles> = {
   ice: Snowflake,
   spark: Zap,
   gunpowder: Bomb,
+  salt: Sparkles,
+  'salt-water': Waves,
+  coal: Gem,
+  ash: Cloud,
+  rubber: Circle,
+  copper: Cable,
+  battery: Battery,
+  mercury: Droplet,
+  alcohol: FlaskConical,
+  'alcohol-vapor': Cloud,
+  sodium: Atom,
+  hydrogen: Wind,
+  soil: Mountain,
+  foam: Bubbles,
 }
 
 interface Point { x: number; y: number }
@@ -46,6 +60,7 @@ declare global {
       count: (materialId: number) => Promise<number>
       cell: (x: number, y: number) => Promise<number>
       status: (x: number, y: number) => Promise<number>
+      charge: (x: number, y: number) => Promise<number>
       heat: (x: number, y: number) => Promise<number>
       tick: () => Promise<number>
     }
@@ -146,6 +161,7 @@ export function App() {
       count: async (materialId) => (await requestSnapshot()).material.reduce((count, value) => count + Number(value === materialId), 0),
       cell: async (x, y) => (await requestSnapshot()).material[y * GRID_WIDTH + x],
       status: async (x, y) => (await requestSnapshot()).status[y * GRID_WIDTH + x],
+      charge: async (x, y) => (await requestSnapshot()).charge[y * GRID_WIDTH + x],
       heat: async (x, y) => (await requestSnapshot()).temperature[y * GRID_WIDTH + x],
       tick: async () => (await requestSnapshot()).tick,
     }
@@ -572,6 +588,7 @@ export function App() {
                       <dt>Material</dt><dd>{inspection.materialId === MaterialId.Empty ? 'Air' : inspectedMaterial?.label}</dd>
                       <dt>Temperature</dt><dd>{inspection.temperature} °C</dd>
                       <dt>Condition</dt><dd>{inspectedConditions}</dd>
+                      <dt>Electrical charge</dt><dd>{inspection.charge} / 255</dd>
                       <dt>State channel</dt><dd>{inspection.state}</dd>
                       <dt>Type</dt><dd>{inspectedProperties.phase} / {inspectedProperties.mobility}</dd>
                       <dt>Flow density</dt><dd>{inspectedProperties.density}</dd>
@@ -588,7 +605,7 @@ export function App() {
                       <dt>Ignition</dt><dd>{inspectedProperties.ignitionTemperature === null ? '—' : `${inspectedProperties.ignitionTemperature} °C`}</dd>
                       <dt>Explosion</dt><dd>{inspectedProperties.explosionRadius > 0 ? `${inspectedProperties.explosionRadius} cells / ${inspectedProperties.explosionPressure}` : '—'}</dd>
                       <dt>Blast resistance</dt><dd>{inspectedProperties.blastResistance}</dd>
-                      <dt>Conductive</dt><dd>{inspectedProperties.conductivity ? 'Yes' : 'No'}</dd>
+                      <dt>Electrical conduction</dt><dd>{Math.round(inspectedProperties.electricalConductivity / 255 * 100)}%</dd>
                       <dt>Corrosiveness</dt><dd>{inspectedProperties.corrosiveness}</dd>
                     </dl>
                   ) : <p>{monitorMode ? 'Click a pixel to pin its live channel.' : 'Move across the field to read a cell.'}</p>}

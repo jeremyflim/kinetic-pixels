@@ -118,7 +118,7 @@ function transferWaterIntoPorousMaterials(world: World): void {
   for (let y = 0; y < world.height; y += 1) {
     for (let x = 0; x < world.width; x += 1) {
       const source = y * world.width + x
-      if (world.material[source] !== MaterialId.Water || world.liquidMass[source] === 0) continue
+      if ((world.material[source] !== MaterialId.Water && world.material[source] !== MaterialId.SaltWater) || world.liquidMass[source] === 0) continue
       for (const [offsetX, offsetY] of [[0, -1], [-1, 0], [1, 0], [0, 1]] as const) {
         const targetX = x + offsetX
         const targetY = y + offsetY
@@ -192,7 +192,7 @@ function updateMoisture(world: World): void {
     evaporateMoisture(world, index)
     if (world.moisture[index] > 0) world.status[index] |= StatusFlag.Wet
     else world.status[index] &= ~StatusFlag.Wet
-    if (world.material[index] === MaterialId.Water && world.liquidMass[index] === 0) emptyCell(world, index)
+    if ((world.material[index] === MaterialId.Water || world.material[index] === MaterialId.SaltWater) && world.liquidMass[index] === 0) emptyCell(world, index)
   }
 }
 

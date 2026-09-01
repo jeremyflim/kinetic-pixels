@@ -23,6 +23,13 @@ const VISIBLY_HEATED = new Set<number>([
   MaterialId.Metal,
   MaterialId.Gunpowder,
   MaterialId.Glass,
+  MaterialId.Coal,
+  MaterialId.Rubber,
+  MaterialId.Copper,
+  MaterialId.Battery,
+  MaterialId.Mercury,
+  MaterialId.Alcohol,
+  MaterialId.Sodium,
 ])
 
 function blendColor(

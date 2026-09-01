@@ -162,11 +162,22 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 }
 
 .material-grid {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
   gap: 0.42cqw;
-  margin-top: 0.7cqw;
+  margin: 0.7cqw -0.3cqw 0.55cqw 0;
+  padding: 0 0.3cqw 0.25cqw 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--shell-pink) #21192c;
 }
+.material-grid::-webkit-scrollbar { width: max(6px, 0.45cqw); }
+.material-grid::-webkit-scrollbar-track { background: #21192c; border: 1px solid #5e4f70; }
+.material-grid::-webkit-scrollbar-thumb { background: var(--shell-pink); border: 1px solid white; box-shadow: inset 0 0 0 1px var(--chrome-purple); }
 
 .material-button {
   position: relative;
@@ -213,6 +224,7 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 .material-button.last-material { grid-column: 1; width: 100%; justify-self: stretch; }
 
 .rail-mark {
+  flex: 0 0 auto;
   margin-top: auto;
   display: flex;
   align-items: end;

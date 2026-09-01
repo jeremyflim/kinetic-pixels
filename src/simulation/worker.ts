@@ -106,6 +106,7 @@ self.onmessage = (event: MessageEvent<WorkerCommand>) => {
       materialId: world.material[index],
       state: world.state[index],
       status: world.status[index],
+      charge: world.charge[index],
       temperature: world.temperature[index],
       moisture: world.moisture[index],
       fuel: world.fuel[index],

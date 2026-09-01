@@ -18,17 +18,17 @@ automatic saving.
 
 - **Responsive simulation loop:** the canonical world, fixed-step physics, and rendering run in
   a dedicated module worker, keeping high-frequency grid updates out of React.
-- **Compact deterministic state:** parallel typed arrays store material identity, temperature,
-  moisture, fuel, liquid mass, phase progress, status, and update bookkeeping. A serialized
+- **Compact deterministic state:** parallel typed arrays store material identity, electrical
+  charge, temperature, moisture, fuel, liquid mass, phase progress, status, and update bookkeeping. A serialized
   xorshift PRNG makes equal seeds and commands reproducible.
 - **Data-driven materials:** stable numeric IDs point to one physical-properties table covering
-  movement, density, heat capacity, conductivity, phase transitions, combustion, moisture,
+  movement, density, thermal behavior, electrical conductivity, ignition sensitivity, phase transitions, combustion, moisture,
   corrosion, and blast resistance.
 - **Grounded physics with explicit game tuning:** heat exchange conserves energy and respects
   relative material properties, while documented calibration factors keep boiling, ignition,
   and other interactions playable.
 - **Portable persistence:** three local slots and validated JSON exports use a versioned format;
-  save versions 2–4 migrate into the current version 5 model.
+  save versions 2–5 migrate into the current version 6 model.
 - **Automated quality gates:** Vitest, Playwright, visual regression snapshots, TypeScript, and a
   production build run in GitHub Actions before the same artifact is published to GitHub Pages.
 
@@ -57,15 +57,16 @@ the same way.
 
 ## Controls
 
-- Choose Sand, Water, Stone, Wood, Fire, Oil, Plant, Acid, Metal, Lava, Ice, Spark, or Gunpowder
-  from the Elements rail. Glass, Smoke, and Steam emerge from phase changes and combustion.
+- Choose from 27 paintable materials in the scrollable Elements rail. The original set is joined
+  by Salt, Salt Water, Coal, Ash, Rubber, Copper, Battery, Mercury, Alcohol, Alcohol Vapor,
+  Sodium, Hydrogen, Soil, and Foam. Glass, Smoke, and Steam also emerge from simulation events.
 - Click, hold, or drag on the field to paint. A held pointer continually reapplies the brush, and
   the first ordinary field click starts the simulation.
 - Use `Space` to Play/Pause and `E` to toggle the Eraser.
 - Use `-`, `=`, or `+` to adjust the circular brush radius from 1–20 cells.
 - Set Room temperature from −100–500°C to change the environmental baseline. Empty air moves
   toward that target, and ordinary newly painted materials begin at it; authored sources such as
-  Fire, Lava, Ice, Steam, and Spark keep their characteristic starting temperatures.
+  Fire, Lava, Ice, Steam, and Alcohol Vapor keep their characteristic starting temperatures.
 - Use `I` or See Stats to inspect live physical properties while preserving normal painting.
 - Click Monitor, then select one cell without painting. Once pinned, the probe stays on that
   coordinate while every normal tool remains available; click Monitor again to remove it.
@@ -103,8 +104,12 @@ Material behavior is split between shared property-driven systems and a sparse p
 - Phase thresholds accumulate latent progress rather than converting immediately.
 - Porous materials absorb and diffuse finite Water mass; evaporation consumes heat.
 - Combustible cells ignite from temperature and dryness, consume fuel, and feed energy back into
-  the shared thermal field.
-- Identity-specific pair rules are reserved for Acid corrosion and dilution.
+  the shared thermal field; configured fuels can leave Ash rather than simply disappearing.
+- A separate charge field propagates deterministic pulses through conductive networks. Battery
+  supplies continuous charge, Copper and Metal carry it efficiently, Salt Water and Mercury
+  create conductive liquid paths, Rubber insulates, and saturated porous materials become conductive.
+- Identity-specific pair rules are reserved for chemistry such as Acid corrosion, Salt dissolving,
+  and Sodium reacting with water—not for general heat, electricity, combustion, or movement.
 
 Water retains its high relative heat capacity, while its latent boiling duration is deliberately
 gameplay-scaled. Steam has no arbitrary deletion timer: warm vapor persists, cooled vapor
@@ -118,6 +123,7 @@ condenses into Water, and its higher-contrast palette remains visible against th
 | `src/simulation/engine.ts` | World lifecycle, fixed update ordering, paint commands, snapshots |
 | `src/simulation/materials.ts` | Material registry, movement, combustion, reactions, transient state |
 | `src/simulation/physics.ts` | Thermal conduction, phases, ignition, moisture transfer |
+| `src/simulation/electricity.ts` | Charge propagation, wet conductivity, resistive heat, electrical ignition |
 | `src/simulation/worker.ts` | Fixed-step scheduler, rendering, compact command protocol |
 | `src/simulation/render.ts` | Deterministic per-cell color and thermal visualization |
 | `src/simulation/serialization.ts` | Save validation, migration, and Base64 typed-array encoding |
@@ -136,9 +142,9 @@ Playwright verifies the user-visible contract rather than internal React state.
 
 The current suite contains:
 
-- **39 Vitest tests** covering material behavior, heat and phase transitions, moisture,
-  combustion, explosions, deterministic ordering, clearing, save migration, and serialization.
-- **26 Playwright tests** covering pointer and keyboard flows, Monitor states, time rate, paused
+- **47 Vitest tests** covering material behavior, electrical networks, heat and phase transitions,
+  moisture, chemistry, combustion, explosions, deterministic ordering, clearing, save migration, and serialization.
+- **28 Playwright tests** covering pointer and keyboard flows, Monitor states, time rate, paused
   editing, long strokes, saves, import/export validation, focus behavior, responsive geometry,
   and visual regression snapshots at 1024 × 576, 1366 × 768, and 1920 × 1080.
 
@@ -163,14 +169,15 @@ Local slots use these versioned keys:
 - `kinetic-pixels:save:b`
 - `kinetic-pixels:save:c`
 
-A save records the material, state, status, temperature, moisture, fuel, liquid-mass, and
+A save records the material, state, status, electrical-charge, temperature, moisture, fuel, liquid-mass, and
 phase-progress grids, plus the tick, initial seed, current PRNG state, format metadata, name, and
 timestamp. Interface preferences and play state are intentionally not persisted.
 
-JSON files use format `kinetic-pixels`, version `5`, and fixed 192 × 180 dimensions. Imports are
+JSON files use format `kinetic-pixels`, version `6`, and fixed 192 × 180 dimensions. Imports are
 size-limited and fully validated before mutation. Invalid JSON, unknown materials, unsupported
 versions, dimension mismatches, or decoded-length errors leave the active world untouched.
-Versions 2–4 remain loadable; older heat, wetness, burning, and 16-bit phase data are migrated.
+Versions 2–5 remain loadable; older heat, wetness, burning, and 16-bit phase data are migrated,
+and pre-electricity saves receive an empty charge field.
 
 ## Performance
 
@@ -184,14 +191,16 @@ Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1
 
 | 192 × 180 scenario | Mean tick | Throughput |
 | --- | ---: | ---: |
-| Fully occupied stationary grid | 3.74 ms | 267.38 ticks/s |
-| Falling Sand | 7.62 ms | 131.24 ticks/s |
-| Water spread | 6.34 ms | 157.77 ticks/s |
-| Fully occupied Lava / thermal field | 9.15 ms | 109.32 ticks/s |
-| Burning Wood / Fire / Smoke | 14.55 ms | 68.72 ticks/s |
+| Fully occupied stationary grid | 3.89 ms | 257.35 ticks/s |
+| Falling Sand | 9.31 ms | 107.46 ticks/s |
+| Water spread | 6.39 ms | 156.45 ticks/s |
+| Fully occupied Lava / thermal field | 13.35 ms | 74.89 ticks/s |
+| Fully powered Copper network | 7.81 ms | 128.08 ticks/s |
+| Burning Wood / Fire / Smoke | 8.76 ms | 114.13 ticks/s |
 
 These figures are descriptive rather than CI thresholds because shared machines and background
-load introduce timing noise. `2×` is a target rate; extremely dense combustion scenes may not
+load introduce timing noise. Electrical passes are skipped when no source or stored charge exists.
+`2×` is a target rate; extremely dense thermal scenes may not
 sustain the full 120 simulation steps per wall-clock second.
 
 ## Deployment

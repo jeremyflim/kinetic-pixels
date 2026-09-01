@@ -1,6 +1,6 @@
 import { bench, describe } from 'vitest'
 import { createWorld, stepWorld } from './engine'
-import { MATERIAL_PROPERTIES, MaterialId, StatusFlag } from './materials'
+import { MATERIAL_PROPERTIES, MaterialId, StatusFlag, initializeTransientState } from './materials'
 
 function filled(materialId: number) {
   const world = createWorld(0xabc123, false)
@@ -25,6 +25,11 @@ describe('192 × 180 simulation tick', () => {
   const lava = filled(MaterialId.Lava)
   lava.temperature.fill(MATERIAL_PROPERTIES[MaterialId.Lava].initialTemperature)
   bench('fully occupied Lava heat', () => stepWorld(lava))
+
+  const circuit = filled(MaterialId.Copper)
+  circuit.material[0] = MaterialId.Battery
+  initializeTransientState(circuit, 0, MaterialId.Battery)
+  bench('fully powered Copper network', () => stepWorld(circuit))
 
   const combustion = createWorld(0xabc123, false)
   for (let index = 0; index < combustion.material.length; index += 3) {
