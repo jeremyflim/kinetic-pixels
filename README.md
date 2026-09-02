@@ -14,6 +14,22 @@ a dedicated Web Worker, `OffscreenCanvas` rendering, versioned local saves, dete
 randomness, and automated browser deployment. It has no server, accounts, analytics, or
 automatic saving.
 
+## Deliberately designed for desktop and mobile
+
+The phone interface is a purpose-built interaction layout, not a scaled-down desktop. The canvas
+remains the primary surface, Elements becomes a horizontally scrollable tray, frequent drawing
+controls stay within thumb reach, and lower-frequency settings move into a dedicated Advanced
+Controls screen. Both layouts operate the same live world, worker, tools, and save system.
+
+<p align="center">
+  <img src="tests/e2e/visual.spec.ts-snapshots/mobile-sandbox-390x844-chromium-win32.png" width="270" alt="Kinetic Pixels mobile sandbox with a large canvas, horizontal Elements tray, and bottom action dock" />
+  &nbsp;&nbsp;
+  <img src="tests/e2e/visual.spec.ts-snapshots/mobile-tools-390x844-chromium-win32.png" width="270" alt="Kinetic Pixels mobile Advanced Controls screen" />
+</p>
+
+The responsive layouts are covered by browser behavior tests and pixel-level visual baselines at
+360 × 640 and 390 × 844, alongside the desktop viewport suite.
+
 ## Engineering highlights
 
 - **Responsive simulation loop:** the canonical world, fixed-step physics, and rendering run in
@@ -131,8 +147,8 @@ Material behavior is split between shared property-driven systems and a sparse p
   become conductive.
 - Identity-specific pair rules are reserved for chemistry. Acid corrosion and Sodium reacting
   with Alcohol release Hydrogen; Salt dissolves progressively into Water and existing Salt Water,
-  slows as the solution becomes concentrated, melts Ice, and can remain behind when brine boils;
-  Water touching sufficiently hot or burning Oil flashes into Steam.
+  slows as the solution becomes concentrated, stops at saturation, melts Ice, and can remain
+  behind when brine boils; Water touching sufficiently hot or burning Oil flashes into Steam.
 - Materials that share a broad category still have distinct gameplay roles. Wood is immovable,
   wettable kindling; Coal falls, needs more heat to ignite, is spark-sensitive, burns roughly
   three times longer, releases more heat, and renders with a separate ember treatment.
