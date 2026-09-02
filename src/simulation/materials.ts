@@ -362,10 +362,24 @@ export const MATERIAL_REACTIONS: readonly MaterialReaction[] = [
 ]
 
 function reactionKey(first: number, second: number): number { return (Math.min(first, second) << 8) | Math.max(first, second) }
-const REACTIONS_BY_PAIR = new Map<number, readonly MaterialReaction[]>()
+const REACTIONS_BY_PAIR: (MaterialReaction[] | undefined)[] = []
+const REACTION_TARGET_MASK = new Uint32Array(256)
 for (const reaction of MATERIAL_REACTIONS) {
   const key = reactionKey(...reaction.materials)
-  REACTIONS_BY_PAIR.set(key, [...(REACTIONS_BY_PAIR.get(key) ?? []), reaction])
+  const reactions = REACTIONS_BY_PAIR[key] ?? []
+  reactions.push(reaction)
+  REACTIONS_BY_PAIR[key] = reactions
+  const initiators = typeof reaction.initiator === 'number' ? [reaction.initiator] : reaction.initiator
+  for (const initiator of initiators) {
+    const target = reaction.materials[0] === initiator ? reaction.materials[1] : reaction.materials[0]
+    REACTION_TARGET_MASK[initiator] |= (1 << target) >>> 0
+  }
+}
+
+function isReactionInitiator(reaction: MaterialReaction, materialId: MaterialIdValue): boolean {
+  return typeof reaction.initiator === 'number'
+    ? reaction.initiator === materialId
+    : reaction.initiator.includes(materialId)
 }
 
 function applyReactionEffect(world: World, index: number, effect: ReactionSideEffect | undefined): void {
@@ -378,11 +392,11 @@ function applyReactionEffect(world: World, index: number, effect: ReactionSideEf
 export function reactMaterialPair(world: World, actorIndex: number, targetIndex: number): boolean {
   const actor = world.material[actorIndex] as MaterialIdValue
   const target = world.material[targetIndex] as MaterialIdValue
-  const reactions = REACTIONS_BY_PAIR.get(reactionKey(actor, target))
+  if ((REACTION_TARGET_MASK[actor] & ((1 << target) >>> 0)) === 0) return false
+  const reactions = REACTIONS_BY_PAIR[reactionKey(actor, target)]
   if (!reactions) return false
   for (const reaction of reactions) {
-    const initiators = Array.isArray(reaction.initiator) ? reaction.initiator : [reaction.initiator]
-    if (!initiators.includes(actor)) continue
+    if (!isReactionInitiator(reaction, actor)) continue
     const sameOrder = reaction.materials[0] === actor && reaction.materials[1] === target
     const aIndex = sameOrder ? actorIndex : targetIndex
     const bIndex = sameOrder ? targetIndex : actorIndex
@@ -402,21 +416,48 @@ export function reactMaterialPair(world: World, actorIndex: number, targetIndex:
 }
 
 function reactWithNeighbors(world: World, actorIndex: number, x: number, y: number): void {
+  const targetMask = REACTION_TARGET_MASK[world.material[actorIndex]]
+  if (targetMask === 0) return
   for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
     for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
       if ((offsetX === 0 && offsetY === 0) || !inBounds(world, x + offsetX, y + offsetY)) continue
-      reactMaterialPair(world, actorIndex, at(world, x + offsetX, y + offsetY))
+      const target = at(world, x + offsetX, y + offsetY)
+      if ((targetMask & ((1 << world.material[target]) >>> 0)) === 0) continue
+      reactMaterialPair(world, actorIndex, target)
       if (world.material[actorIndex] === MaterialId.Empty) return
     }
   }
 }
 
-function driftingVerticalAttempts(world: World, x: number, y: number, verticalDirection: -1 | 1, materialDriftChance: number): readonly (readonly [number, number])[] {
+function tryVerticalMove(
+  world: World,
+  index: number,
+  x: number,
+  y: number,
+  verticalDirection: -1 | 1,
+  materialId: MaterialIdValue,
+  allowDisplacement: boolean,
+): boolean {
   const horizontalDirection = chance(world, 0.5) ? 1 : -1
   const verticalY = y + verticalDirection
-  return chance(world, materialDriftChance)
-    ? [[x + horizontalDirection, verticalY], [x, verticalY], [x - horizontalDirection, verticalY]]
-    : [[x, verticalY], [x + horizontalDirection, verticalY], [x - horizontalDirection, verticalY]]
+  const driftFirst = chance(world, driftChance(materialId))
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const horizontalOffset = driftFirst
+      ? (attempt === 0 ? horizontalDirection : attempt === 1 ? 0 : -horizontalDirection)
+      : (attempt === 0 ? 0 : attempt === 1 ? horizontalDirection : -horizontalDirection)
+    const targetX = x + horizontalOffset
+    if (!inBounds(world, targetX, verticalY)) continue
+    const target = at(world, targetX, verticalY)
+    if (world.material[target] === MaterialId.Empty) {
+      move(world, index, target)
+      return true
+    }
+    if (allowDisplacement && canDisplace(materialId, world.material[target] as MaterialIdValue)) {
+      swap(world, index, target)
+      return true
+    }
+  }
+  return false
 }
 function driftChance(materialId: MaterialIdValue): number { return 0.15 + (1 - MATERIAL_PROPERTIES[materialId].friction) * 0.3 }
 function canDisplace(movingMaterial: MaterialIdValue, targetMaterial: MaterialIdValue): boolean {
@@ -622,12 +663,7 @@ function updatePowder(world: World, context: UpdateContext, materialId: Material
   if (world.material[index] !== materialId) return
   if (MATERIAL_PROPERTIES[materialId].fuel > 0 && updateCombustion(world, index, x, y, materialId)) return
   if (y >= world.height - 1) return updateStatic(world, context)
-  for (const [targetX, targetY] of driftingVerticalAttempts(world, x, y, 1, driftChance(materialId))) {
-    if (!inBounds(world, targetX, targetY)) continue
-    const target = at(world, targetX, targetY)
-    if (world.material[target] === MaterialId.Empty) return move(world, index, target)
-    if (canDisplace(materialId, world.material[target] as MaterialIdValue)) return swap(world, index, target)
-  }
+  if (tryVerticalMove(world, index, x, y, 1, materialId, true)) return
   world.updatedAt[index] = world.tick
 }
 function updateSand(world: World, context: UpdateContext): void { updatePowder(world, context, MaterialId.Sand) }
@@ -688,32 +724,31 @@ function updateFluid(world: World, context: UpdateContext, materialId: MaterialI
   const { index, x, y } = context
   reactWithNeighbors(world, index, x, y)
   if (world.material[index] !== materialId) return
-  mixAqueousNeighbor(world, index, x, y)
-  if (world.material[index] !== materialId) return
   const properties = MATERIAL_PROPERTIES[materialId]
-  if (flashWaterAgainstHotOil(world, index, x, y, materialId)) return
-  extinguishNeighbors(world, x, y, properties.extinguishingPower, materialId)
-  if (properties.fuel > 0 && updateCombustion(world, index, x, y, materialId)) return
-  const attempts = y < world.height - 1 ? driftingVerticalAttempts(world, x, y, 1, driftChance(materialId)) : []
-  for (const [targetX, targetY] of attempts) {
-    if (!inBounds(world, targetX, targetY)) continue
-    const target = at(world, targetX, targetY)
-    if (world.material[target] === MaterialId.Empty) return move(world, index, target)
-    if (canDisplace(materialId, world.material[target] as MaterialIdValue)) return swap(world, index, target)
+  if (isAqueousLiquid(materialId)) {
+    mixAqueousNeighbor(world, index, x, y)
+    if (world.material[index] !== materialId) return
   }
+  if ((materialId === MaterialId.Water || materialId === MaterialId.SaltWater || materialId === MaterialId.Oil)
+    && flashWaterAgainstHotOil(world, index, x, y, materialId)) return
+  if (properties.extinguishingPower > 0) extinguishNeighbors(world, x, y, properties.extinguishingPower, materialId)
+  if (properties.fuel > 0 && updateCombustion(world, index, x, y, materialId)) return
+  if (y < world.height - 1 && tryVerticalMove(world, index, x, y, 1, materialId, true)) return
   const maximumDistance = Math.max(1, Math.round((1 - MATERIAL_PROPERTIES[materialId].viscosity) * 12))
   const left = fluidPath(world, x, y, -1, maximumDistance)
   const right = fluidPath(world, x, y, 1, maximumDistance)
-  const drops = [left, right].filter((path) => path.drop >= 0)
-  if (drops.length > 0) {
-    const shortest = Math.min(...drops.map((path) => path.dropDistance))
-    const closest = drops.filter((path) => path.dropDistance === shortest)
-    return move(world, index, (closest.length === 1 || chance(world, 0.5) ? closest[0] : closest[1]).drop)
+  if (left.drop >= 0 || right.drop >= 0) {
+    if (left.drop < 0) return move(world, index, right.drop)
+    if (right.drop < 0) return move(world, index, left.drop)
+    if (left.dropDistance < right.dropDistance) return move(world, index, left.drop)
+    if (right.dropDistance < left.dropDistance) return move(world, index, right.drop)
+    return move(world, index, chance(world, 0.5) ? left.drop : right.drop)
   }
   const longestRun = Math.max(left.run, right.run)
   if (longestRun > 0) {
-    const longest = [left, right].filter((path) => path.run === longestRun)
-    return move(world, index, (longest.length === 1 || chance(world, 0.5) ? longest[0] : longest[1]).furthest)
+    if (left.run > right.run) return move(world, index, left.furthest)
+    if (right.run > left.run) return move(world, index, right.furthest)
+    return move(world, index, chance(world, 0.5) ? left.furthest : right.furthest)
   }
   world.updatedAt[index] = world.tick
 }
@@ -727,7 +762,8 @@ function tryHorizontalGasMove(world: World, index: number, x: number, y: number,
   const dispersion = MATERIAL_PROPERTIES[materialId].dispersion
   if (dispersion <= 0 || !chance(world, dispersion)) return false
   const direction = chance(world, 0.5) ? 1 : -1
-  for (const targetX of [x + direction, x - direction]) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const targetX = x + (attempt === 0 ? direction : -direction)
     if (!inBounds(world, targetX, y)) continue
     const target = at(world, targetX, y)
     if (world.material[target] === MaterialId.Empty) { move(world, index, target); return true }
@@ -739,11 +775,7 @@ function tryRisingMove(world: World, index: number, x: number, y: number, materi
   const properties = MATERIAL_PROPERTIES[materialId]
   if (properties.phase === 'gas' && chance(world, properties.dispersion * 0.25)
     && tryHorizontalGasMove(world, index, x, y, materialId)) return true
-  for (const [targetX, targetY] of driftingVerticalAttempts(world, x, y, -1, driftChance(materialId))) {
-    if (!inBounds(world, targetX, targetY)) continue
-    const target = at(world, targetX, targetY)
-    if (world.material[target] === MaterialId.Empty) { move(world, index, target); return true }
-  }
+  if (tryVerticalMove(world, index, x, y, -1, materialId, false)) return true
   return properties.phase === 'gas' && tryHorizontalGasMove(world, index, x, y, materialId)
 }
 

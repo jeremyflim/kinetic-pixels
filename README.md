@@ -17,7 +17,11 @@ automatic saving.
 ## Engineering highlights
 
 - **Responsive simulation loop:** the canonical world, fixed-step physics, and rendering run in
-  a dedicated module worker, keeping high-frequency grid updates out of React.
+  a dedicated module worker, keeping high-frequency grid updates out of React. A bounded work
+  budget yields during overload instead of stacking long catch-up bursts.
+- **Dirty-region rendering:** one persistent pixel buffer caches the last visible cell state,
+  recolors only changed cells, and uploads merged 12 × 12 regions; unchanged frames perform no
+  canvas upload.
 - **Compact deterministic state:** parallel typed arrays store material identity, per-cell
   material state, electrical charge, temperature, moisture, fuel, liquid mass, phase progress,
   status, and update bookkeeping. A serialized xorshift PRNG makes equal seeds and commands
@@ -159,7 +163,7 @@ Playwright verifies the user-visible contract rather than internal React state.
 
 The current suite contains:
 
-- **62 Vitest tests** covering material behavior, electrical networks, overlapping-pulse
+- **65 Vitest tests** covering material behavior, dirty-region rendering, electrical networks, overlapping-pulse
   termination, aqueous dilution, flow
   properties, Source, heat and phase transitions, moisture, chemistry, sparse combustion residue,
   explosions, deterministic ordering, clearing, save migration, and serialization.
@@ -212,18 +216,25 @@ Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1
 
 | 192 × 180 scenario | Mean tick | Throughput |
 | --- | ---: | ---: |
-| Fully occupied stationary grid | 3.73 ms | 268.39 ticks/s |
-| Falling Sand | 7.88 ms | 126.82 ticks/s |
-| Water spread | 4.79 ms | 208.69 ticks/s |
-| Water and Alcohol mixing | 9.10 ms | 109.85 ticks/s |
-| Fully occupied Lava / thermal field | 13.97 ms | 71.58 ticks/s |
-| Current propagating through Metal | 6.60 ms | 151.47 ticks/s |
-| Burning Wood / Fire / Smoke | 9.45 ms | 105.79 ticks/s |
+| Fully occupied stationary grid | 4.03 ms | 247.95 ticks/s |
+| Falling Sand | 4.76 ms | 209.89 ticks/s |
+| Water spread | 2.93 ms | 341.87 ticks/s |
+| Water and Alcohol mixing | 7.12 ms | 140.35 ticks/s |
+| Fully occupied Lava / thermal field | 7.87 ms | 127.06 ticks/s |
+| Current propagating through Metal | 6.26 ms | 159.71 ticks/s |
+| Burning Wood / Fire / Smoke | 6.39 ms | 156.52 ticks/s |
+
+The same command benchmarks render preparation separately. An unchanged 192 × 180 field takes
+1.23 ms to verify and performs no canvas upload; a deliberately animated half-screen combustion
+field takes 4.77 ms while recoloring 17,280 cells. These replace the previous unconditional
+whole-field recolor and upload on every visual frame.
 
 These figures are descriptive rather than CI thresholds because shared machines and background
 load introduce timing noise. Electrical passes are skipped when no source or traveling current exists.
-`2×` is a target rate; extremely dense thermal scenes may not
-sustain the full 120 simulation steps per wall-clock second.
+Numeric mobility dispatch, allocation-free movement attempts, and reaction target masks keep
+non-participating materials out of expensive generic paths. `2×` remains a target rate; when a
+scene cannot sustain it, the worker drops excess wall-clock debt and limits rendering to 30 Hz
+rather than issuing a multi-tick stall.
 
 ## Deployment
 

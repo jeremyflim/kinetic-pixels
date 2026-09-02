@@ -18,6 +18,8 @@ core has no React, DOM, worker, or canvas dependencies.
 - Every cell is updated at most once per tick.
 - Falling passes scan bottom-to-top; rising passes scan top-to-bottom.
 - Horizontal traversal alternates by tick; seeded randomness chooses particle drift and fluid flow.
+- Hot update passes use numeric mobility masks and one reusable context object; material identity
+  still selects the same data-driven update function and deterministic scan order.
 - Painting fills empty cells. Reapplying an energy material refreshes its source temperature and
   lifetime; erasing clears material and transient state.
 - Paused worlds perform no recurring physics work, but edits render immediately.
@@ -112,7 +114,10 @@ chains use the same data model rather than a Gunpowder-to-Gunpowder pair reactio
 Movement, combustion, and electricity update at 60 Hz, temperature and phase behavior at 30 Hz, and moisture
 and active heat emission at 10 Hz of simulation time. Emitted energy is batched without changing
 its per-second total. The worker accrues those unchanged fixed steps at `½×`, `1×`, or `2×`
-wall-clock rate. Version 6 saves serialize charge and 32-bit latent progress with the other canonical arrays.
+wall-clock rate. Each callback has a 12 ms simulation budget after its first required step. On
+overload, excess wall-clock debt is discarded and visual presentation is capped at 30 Hz so the
+worker returns to its message queue instead of executing five expensive catch-up steps in one
+long task. Version 6 saves serialize charge and 32-bit latent progress with the other canonical arrays.
 Versions 2–5 remain accepted; legacy burning, Wet, heat, and 16-bit phase values migrate before
 replacement. Fractional thermal remainder and per-pulse traversal history are transient solver
 state; saved full-strength fronts are conservatively relaunched when a world is restored.
@@ -132,6 +137,12 @@ The worker renders one logical pixel per cell to a 192 × 180 offscreen buffer. 
 variation is a stable hash of material, coordinates, cell state, and seed. CSS scales the canvas
 with `image-rendering: pixelated` while preserving the grid's 16:15 aspect ratio. A low-opacity
 red/blue thermal tint applies to every cell, including air, so the continuous field is visible.
+One persistent `ImageData` remains the only application-owned RGBA buffer. A compact cache of the
+previous material, state, status, charge, temperature, moisture, fuel, and animation tick detects
+visual changes. Changed cells are recolored and grouped into 12 × 12 dirty tiles; contiguous tiles
+on a row share one partial `putImageData` upload, while changes covering more than one quarter of
+the field use one full upload. A completely unchanged frame performs neither color calculation
+nor canvas upload after the inexpensive state comparison.
 The fixed viewport can magnify its canvas from 100–400%; pointer-centered wheel calculations
 preserve the sampled world cell while the full-height bezel slider provides keyboard and direct
 control without changing the playfield dimensions.

@@ -5,7 +5,7 @@ import { MAXIMUM_ROOM_TEMPERATURE, MINIMUM_ROOM_TEMPERATURE } from './constants'
 import { effectiveElectricalConductivity } from './electricity'
 import { MATERIAL_PROPERTIES, type MaterialIdValue } from './materials'
 import { resolvedPhaseTransitions } from './physics'
-import { renderWorld } from './render'
+import { createRenderCache, renderWorld, type RenderCache } from './render'
 import type { CellInspection, Snapshot, World } from './types'
 
 type WorkerCommand =
@@ -22,15 +22,19 @@ type WorkerCommand =
 let world: World | undefined
 let context: OffscreenCanvasRenderingContext2D | null = null
 let imageData: ImageData | undefined
+let renderCache: RenderCache | undefined
 let running = false
 let lastTime = 0
 let accumulator = 0
 let timeRate = 1
 const FIXED_STEP_MS = 1000 / 60
 const MAX_CATCH_UP_STEPS = 5
+const MAX_SIMULATION_WORK_MS = 12
+const OVERLOAD_RENDER_INTERVAL_MS = 1000 / 30
+let lastRenderTime = Number.NEGATIVE_INFINITY
 
 function draw(): void {
-  if (world && context && imageData) renderWorld(context, world, imageData)
+  if (world && context && imageData && renderCache) renderWorld(context, world, imageData, renderCache)
 }
 
 function scheduleFrame(callback: (time: number) => void): void {
@@ -44,12 +48,19 @@ function frame(time: number): void {
   accumulator = Math.min(accumulator + (time - lastTime) * timeRate, FIXED_STEP_MS * MAX_CATCH_UP_STEPS)
   lastTime = time
   let steps = 0
+  const workStarted = performance.now()
   while (accumulator >= FIXED_STEP_MS && steps < MAX_CATCH_UP_STEPS) {
+    if (steps > 0 && performance.now() - workStarted >= MAX_SIMULATION_WORK_MS) break
     stepWorld(world)
     accumulator -= FIXED_STEP_MS
     steps += 1
   }
-  if (steps > 0) draw()
+  const overloaded = performance.now() - workStarted >= MAX_SIMULATION_WORK_MS
+  if (overloaded && accumulator > FIXED_STEP_MS) accumulator = FIXED_STEP_MS
+  if (steps > 0 && (!overloaded || time - lastRenderTime >= OVERLOAD_RENDER_INTERVAL_MS)) {
+    draw()
+    lastRenderTime = time
+  }
   scheduleFrame(frame)
 }
 
@@ -71,6 +82,7 @@ self.onmessage = (event: MessageEvent<WorkerCommand>) => {
     if (!context) throw new Error('Unable to initialize simulation canvas')
     context.imageSmoothingEnabled = false
     imageData = context.createImageData(world.width, world.height)
+    renderCache = createRenderCache(world)
     draw()
     self.postMessage({ type: 'ready' })
     return

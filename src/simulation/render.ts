@@ -2,6 +2,27 @@ import { MATERIALS, MATERIAL_PROPERTIES, MaterialId, type MaterialIdValue, solut
 import { AMBIENT_TEMPERATURE, MAXIMUM_TEMPERATURE, MINIMUM_TEMPERATURE } from './constants'
 import type { World } from './types'
 
+const RENDER_TILE_SIZE = 12
+
+export interface RenderCache {
+  material: Uint8Array
+  state: Uint16Array
+  status: Uint8Array
+  charge: Uint8Array
+  temperature: Int16Array
+  moisture: Uint8Array
+  fuel: Uint8Array
+  animationTick: Uint32Array
+  dirtyTiles: Uint8Array
+  tileColumns: number
+  tileRows: number
+}
+
+export interface RenderResult {
+  changedCells: number
+  uploadedRegions: number
+}
+
 const RGB = MATERIALS.map((material) => material.colors.map((color) => {
   const value = Number.parseInt(color.slice(1), 16)
   return [(value >> 16) & 255, (value >> 8) & 255, value & 255] as const
@@ -108,15 +129,114 @@ export function cellColor(world: World, index: number): readonly [number, number
   return color
 }
 
-export function renderWorld(context: OffscreenCanvasRenderingContext2D, world: World, imageData: ImageData): void {
+export function createRenderCache(world: World): RenderCache {
+  const length = world.material.length
+  const material = new Uint8Array(length)
+  material.fill(0xff)
+  return {
+    material,
+    state: new Uint16Array(length),
+    status: new Uint8Array(length),
+    charge: new Uint8Array(length),
+    temperature: new Int16Array(length),
+    moisture: new Uint8Array(length),
+    fuel: new Uint8Array(length),
+    animationTick: new Uint32Array(length),
+    tileColumns: Math.ceil(world.width / RENDER_TILE_SIZE),
+    tileRows: Math.ceil(world.height / RENDER_TILE_SIZE),
+    dirtyTiles: new Uint8Array(Math.ceil(world.width / RENDER_TILE_SIZE) * Math.ceil(world.height / RENDER_TILE_SIZE)),
+  }
+}
+
+function animationTick(world: World, index: number): number {
+  return world.status[index] & (StatusFlag.Burning | StatusFlag.Charged) ? world.tick >>> 0 : 0
+}
+
+function visualStateChanged(world: World, cache: RenderCache, index: number): boolean {
+  const nextAnimationTick = animationTick(world, index)
+  if (
+    cache.material[index] === world.material[index]
+    && cache.state[index] === world.state[index]
+    && cache.status[index] === world.status[index]
+    && cache.charge[index] === world.charge[index]
+    && cache.temperature[index] === world.temperature[index]
+    && cache.moisture[index] === world.moisture[index]
+    && cache.fuel[index] === world.fuel[index]
+    && cache.animationTick[index] === nextAnimationTick
+  ) return false
+  cache.material[index] = world.material[index]
+  cache.state[index] = world.state[index]
+  cache.status[index] = world.status[index]
+  cache.charge[index] = world.charge[index]
+  cache.temperature[index] = world.temperature[index]
+  cache.moisture[index] = world.moisture[index]
+  cache.fuel[index] = world.fuel[index]
+  cache.animationTick[index] = nextAnimationTick
+  return true
+}
+
+function uploadDirtyTiles(
+  context: OffscreenCanvasRenderingContext2D,
+  imageData: ImageData,
+  cache: RenderCache,
+  width: number,
+  height: number,
+  dirtyTileCount: number,
+): number {
+  if (dirtyTileCount === 0) return 0
+  if (dirtyTileCount > cache.dirtyTiles.length / 4) {
+    context.putImageData(imageData, 0, 0, 0, 0, width, height)
+    return 1
+  }
+  let uploadedRegions = 0
+  for (let tileY = 0; tileY < cache.tileRows; tileY += 1) {
+    let tileX = 0
+    while (tileX < cache.tileColumns) {
+      const rowOffset = tileY * cache.tileColumns
+      while (tileX < cache.tileColumns && cache.dirtyTiles[rowOffset + tileX] === 0) tileX += 1
+      if (tileX >= cache.tileColumns) break
+      const startTileX = tileX
+      while (tileX < cache.tileColumns && cache.dirtyTiles[rowOffset + tileX] !== 0) tileX += 1
+      const dirtyX = startTileX * RENDER_TILE_SIZE
+      const dirtyY = tileY * RENDER_TILE_SIZE
+      const dirtyWidth = Math.min(width, tileX * RENDER_TILE_SIZE) - dirtyX
+      const dirtyHeight = Math.min(RENDER_TILE_SIZE, height - dirtyY)
+      context.putImageData(imageData, 0, 0, dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+      uploadedRegions += 1
+    }
+  }
+  return uploadedRegions
+}
+
+export function renderWorld(
+  context: OffscreenCanvasRenderingContext2D,
+  world: World,
+  imageData: ImageData,
+  cache: RenderCache,
+): RenderResult {
   const pixels = imageData.data
+  cache.dirtyTiles.fill(0)
+  let changedCells = 0
+  let dirtyTileCount = 0
   for (let index = 0; index < world.material.length; index += 1) {
+    if (!visualStateChanged(world, cache, index)) continue
     const [red, green, blue] = cellColor(world, index)
     const pixel = index * 4
     pixels[pixel] = red
     pixels[pixel + 1] = green
     pixels[pixel + 2] = blue
     pixels[pixel + 3] = 255
+    changedCells += 1
+    const x = index % world.width
+    const y = Math.floor(index / world.width)
+    const tile = Math.floor(y / RENDER_TILE_SIZE) * cache.tileColumns + Math.floor(x / RENDER_TILE_SIZE)
+    if (cache.dirtyTiles[tile] === 0) {
+      cache.dirtyTiles[tile] = 1
+      dirtyTileCount += 1
+    }
   }
-  context.putImageData(imageData, 0, 0)
+  return {
+    changedCells,
+    uploadedRegions: uploadDirtyTiles(context, imageData, cache, world.width, world.height, dirtyTileCount),
+  }
 }

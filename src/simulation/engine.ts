@@ -1,14 +1,16 @@
-import { MATERIAL_BY_ID, MaterialId, initializeTransientState } from './materials'
+import { MATERIALS, MaterialId, initializeTransientState } from './materials'
 import { AMBIENT_TEMPERATURE } from './constants'
 import { updatePhysicalWorld } from './physics'
 import { launchElectricalPulse, updateElectricity } from './electricity'
 import { normalizeSeed } from './random'
 import { rasterizeTitle } from './title'
-import { GRID_HEIGHT, GRID_WIDTH, type MaterialMobility, type Snapshot, type World } from './types'
+import { GRID_HEIGHT, GRID_WIDTH, type Snapshot, type UpdateContext, type World } from './types'
 
-const STATIONARY_MOBILITIES = new Set<MaterialMobility>(['immovable'])
-const FALLING_MOBILITIES = new Set<MaterialMobility>(['powder', 'fluid'])
-const RISING_MOBILITIES = new Set<MaterialMobility>(['rising'])
+const MOBILITY_CODE = { none: 0, immovable: 1, powder: 2, fluid: 3, rising: 4 } as const
+const MATERIAL_MOBILITY = Uint8Array.from(MATERIALS.map((material) => MOBILITY_CODE[material.properties.mobility]))
+const STATIONARY_MASK = 1 << MOBILITY_CODE.immovable
+const FALLING_MASK = (1 << MOBILITY_CODE.powder) | (1 << MOBILITY_CODE.fluid)
+const RISING_MASK = 1 << MOBILITY_CODE.rising
 
 export function createWorld(seed = 0x4b504958, withTitle = true, width = GRID_WIDTH, height = GRID_HEIGHT): World {
   const normalizedSeed = normalizeSeed(seed)
@@ -42,11 +44,12 @@ export function createWorld(seed = 0x4b504958, withTitle = true, width = GRID_WI
   return world
 }
 
-function updatePass(world: World, mobilities: ReadonlySet<MaterialMobility>, rising: boolean): void {
+function updatePass(world: World, mobilityMask: number, rising: boolean): void {
   const direction = world.tick % 2 === 0 ? 1 : -1
   const startY = rising ? 0 : world.height - 1
   const endY = rising ? world.height : -1
   const stepY = rising ? 1 : -1
+  const context: UpdateContext = { direction, index: 0, x: 0, y: 0 }
 
   for (let y = startY; y !== endY; y += stepY) {
     const startX = direction === 1 ? 0 : world.width - 1
@@ -54,18 +57,21 @@ function updatePass(world: World, mobilities: ReadonlySet<MaterialMobility>, ris
     for (let x = startX; x !== endX; x += direction) {
       const index = y * world.width + x
       if (world.updatedAt[index] === world.tick) continue
-      const definition = MATERIAL_BY_ID.get(world.material[index])
-      if (!definition || !mobilities.has(definition.properties.mobility)) continue
-      definition.update(world, { direction, index, x, y })
+      const materialId = world.material[index]
+      if ((mobilityMask & (1 << MATERIAL_MOBILITY[materialId])) === 0) continue
+      context.index = index
+      context.x = x
+      context.y = y
+      MATERIALS[materialId].update(world, context)
     }
   }
 }
 
 export function stepWorld(world: World): void {
   world.tick += 1
-  updatePass(world, STATIONARY_MOBILITIES, false)
-  updatePass(world, FALLING_MOBILITIES, false)
-  updatePass(world, RISING_MOBILITIES, true)
+  updatePass(world, STATIONARY_MASK, false)
+  updatePass(world, FALLING_MASK, false)
+  updatePass(world, RISING_MASK, true)
   updateElectricity(world)
   updatePhysicalWorld(world)
 }
@@ -116,7 +122,7 @@ export function paintCircle(world: World, centerX: number, centerY: number, radi
         world.phaseProgress[index] = 0
         world.thermalRemainder[index] = 0
       } else {
-        const definition = MATERIAL_BY_ID.get(materialId)
+        const definition = MATERIALS[materialId]
         const canPaint = definition?.paintable && (
           world.material[index] === MaterialId.Empty
           || (world.material[index] === materialId && definition.properties.phase === 'energy')
@@ -190,7 +196,7 @@ export function replaceWorld(world: World, snapshot: Snapshot): void {
   const savedFront = [...snapshot.charge.keys()].filter((index) => snapshot.charge[index] === 255)
   if (savedFront.length > 0) launchElectricalPulse(world, savedFront)
   world.electricalActive = snapshot.charge.some((value) => value > 0)
-    || snapshot.material.some((materialId) => Boolean(MATERIAL_BY_ID.get(materialId)?.properties.chargeSource))
+    || snapshot.material.some((materialId) => Boolean(MATERIALS[materialId]?.properties.chargeSource))
   world.tick = snapshot.tick >>> 0
   world.seed = normalizeSeed(snapshot.seed)
   world.randomState = normalizeSeed(snapshot.randomState)

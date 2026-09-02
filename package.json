@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "benchmark": "vitest bench --run src/simulation/engine.bench.ts"
+    "benchmark": "vitest bench --run"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
