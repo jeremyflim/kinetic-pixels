@@ -348,11 +348,13 @@ function neighbors(world: World, x: number, y: number): number[] {
 }
 
 interface ReactionSideEffect { product?: MaterialIdValue; temperature?: number; concentration?: number }
+interface DissolutionEffect { product: MaterialIdValue; solidConcentration: number }
 export interface MaterialReaction {
   materials: readonly [MaterialIdValue, MaterialIdValue]
   initiator: MaterialIdValue | readonly MaterialIdValue[]
   chancePerSecond: number
   scaleByCorrosion?: boolean
+  dissolution?: DissolutionEffect
   a?: ReactionSideEffect
   b?: ReactionSideEffect
 }
@@ -364,7 +366,8 @@ export const MATERIAL_REACTIONS: readonly MaterialReaction[] = [
   { materials: [MaterialId.Acid, MaterialId.Wood], initiator: MaterialId.Acid, chancePerSecond: 0.15, scaleByCorrosion: true, b: { product: MaterialId.Empty } },
   { materials: [MaterialId.Acid, MaterialId.Metal], initiator: MaterialId.Acid, chancePerSecond: 0.45, scaleByCorrosion: true, a: { product: MaterialId.SaltWater, concentration: 80 }, b: { product: MaterialId.Hydrogen, temperature: 120 } },
   { materials: [MaterialId.Acid, MaterialId.Copper], initiator: MaterialId.Acid, chancePerSecond: 0.28, scaleByCorrosion: true, a: { product: MaterialId.SaltWater, concentration: 80 }, b: { product: MaterialId.Hydrogen, temperature: 120 } },
-  { materials: [MaterialId.Salt, MaterialId.Water], initiator: MaterialId.Salt, chancePerSecond: 1, a: { product: MaterialId.SaltWater, concentration: 80 }, b: { product: MaterialId.SaltWater, concentration: 80 } },
+  { materials: [MaterialId.Salt, MaterialId.Water], initiator: MaterialId.Salt, chancePerSecond: 0.45, dissolution: { product: MaterialId.SaltWater, solidConcentration: 160 } },
+  { materials: [MaterialId.Salt, MaterialId.SaltWater], initiator: MaterialId.Salt, chancePerSecond: 0.45, dissolution: { product: MaterialId.SaltWater, solidConcentration: 160 } },
   { materials: [MaterialId.Salt, MaterialId.Ice], initiator: MaterialId.Salt, chancePerSecond: 0.9, a: { product: MaterialId.SaltWater, temperature: -2, concentration: 80 }, b: { product: MaterialId.SaltWater, temperature: -2, concentration: 80 } },
   { materials: [MaterialId.Sodium, MaterialId.Water], initiator: MaterialId.Sodium, chancePerSecond: 1, a: { product: MaterialId.Fire, temperature: 900 }, b: { product: MaterialId.Hydrogen, temperature: 500 } },
   { materials: [MaterialId.Sodium, MaterialId.SaltWater], initiator: MaterialId.Sodium, chancePerSecond: 1, a: { product: MaterialId.Fire, temperature: 900 }, b: { product: MaterialId.Hydrogen, temperature: 500 } },
@@ -400,6 +403,19 @@ function applyReactionEffect(world: World, index: number, effect: ReactionSideEf
   if (effect.concentration !== undefined) world.state[index] = effect.concentration
 }
 
+function dissolveSolidIntoSolution(world: World, solidIndex: number, solutionIndex: number, effect: DissolutionEffect): void {
+  const solutionMaterial = world.material[solutionIndex] as MaterialIdValue
+  const existingConcentration = solutionConcentration(solutionMaterial, world.state[solutionIndex])
+  const concentration = (effect.solidConcentration + existingConcentration) / 2
+  const solidCapacity = MATERIAL_PROPERTIES[world.material[solidIndex] as MaterialIdValue].heatCapacity
+  const solutionCapacity = MATERIAL_PROPERTIES[solutionMaterial].heatCapacity
+  const temperature = Math.round((world.temperature[solidIndex] * solidCapacity + world.temperature[solutionIndex] * solutionCapacity) / (solidCapacity + solutionCapacity))
+  setMaterialCell(world, solidIndex, effect.product, temperature)
+  setMaterialCell(world, solutionIndex, effect.product, temperature)
+  world.state[solidIndex] = Math.round(concentration)
+  world.state[solutionIndex] = Math.round(concentration)
+}
+
 export function reactMaterialPair(world: World, actorIndex: number, targetIndex: number): boolean {
   const actor = world.material[actorIndex] as MaterialIdValue
   const target = world.material[targetIndex] as MaterialIdValue
@@ -420,7 +436,18 @@ export function reactMaterialPair(world: World, actorIndex: number, targetIndex:
       probability *= Math.max(0, Math.min(1, aProperties.corrosiveness - bProperties.hardness * 0.5))
     }
     if (world.material[aIndex] === MaterialId.Acid) probability *= solutionStrength(MaterialId.Acid, world.state[aIndex])
+    if (reaction.dissolution) {
+      const solutionIndex = world.material[aIndex] === MaterialId.Salt ? bIndex : aIndex
+      const solutionMaterial = world.material[solutionIndex] as MaterialIdValue
+      probability *= Math.max(0.08, 1 - solutionConcentration(solutionMaterial, world.state[solutionIndex]) / 255)
+    }
     if (!chance(world, probability)) continue
+    if (reaction.dissolution) {
+      const solidIndex = world.material[aIndex] === MaterialId.Salt ? aIndex : bIndex
+      const solutionIndex = solidIndex === aIndex ? bIndex : aIndex
+      dissolveSolidIntoSolution(world, solidIndex, solutionIndex, reaction.dissolution)
+      return true
+    }
     applyReactionEffect(world, aIndex, reaction.a)
     applyReactionEffect(world, bIndex, reaction.b)
     return true

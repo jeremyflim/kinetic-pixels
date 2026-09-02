@@ -36,6 +36,9 @@ automatic saving.
   and other interactions playable.
 - **Portable persistence:** three local slots and validated JSON exports use a versioned format;
   save versions 2–5 migrate into the current version 6 model.
+- **Purpose-built responsive interface:** the desktop molded-console layout becomes a compact
+  handheld layout on phones, with a horizontal Elements tray, touch-sized drawing controls, and a
+  dedicated Tools screen around the same live canvas and simulation state.
 - **Automated quality gates:** Vitest, Playwright, visual regression snapshots, TypeScript, and a
   production build run in GitHub Actions before the same artifact is published to GitHub Pages.
 
@@ -90,6 +93,9 @@ the same way.
   suppresses the browser context menu during this interaction.
 - Clear empties the world without changing the selected tool, radius, or play state.
 - Memory Card pauses the simulation and opens three local slots plus JSON import/export.
+- On phone-width screens, Elements becomes a horizontal tray and brush, Eraser, Mix, Play, Clear,
+  Memory, and Tools remain within thumb reach. Tools opens a separate Advanced Controls screen for
+  room temperature, zoom, time rate, See Stats, and Monitor.
 
 The simulation remains editable while paused. Reloading the browser is intentionally the only
 way to recreate the original wooden title.
@@ -124,8 +130,9 @@ Material behavior is split between shared property-driven systems and a sparse p
   Salt Water creates conductive liquid paths, Rubber insulates, and saturated porous materials
   become conductive.
 - Identity-specific pair rules are reserved for chemistry. Acid corrosion and Sodium reacting
-  with Alcohol release Hydrogen; Salt dissolves into Water, melts Ice, and can remain behind when
-  brine boils; Water touching sufficiently hot or burning Oil flashes into Steam.
+  with Alcohol release Hydrogen; Salt dissolves progressively into Water and existing Salt Water,
+  slows as the solution becomes concentrated, melts Ice, and can remain behind when brine boils;
+  Water touching sufficiently hot or burning Oil flashes into Steam.
 - Materials that share a broad category still have distinct gameplay roles. Wood is immovable,
   wettable kindling; Coal falls, needs more heat to ignite, is spark-sensitive, burns roughly
   three times longer, releases more heat, and renders with a separate ember treatment.
@@ -171,9 +178,10 @@ The current suite contains:
   termination, aqueous dilution, flow
   properties, Source, heat and phase transitions, moisture, chemistry, sparse combustion residue,
   explosions, deterministic ordering, clearing, save migration, and serialization.
-- **29 Playwright tests** covering pointer and keyboard flows, Mix, Monitor states, time rate, paused
+- **32 Playwright tests** covering pointer and keyboard flows, Mix, Monitor states, time rate, paused
   editing, long strokes, saves, import/export validation, focus behavior, responsive geometry,
-  and visual regression snapshots at 1024 × 576, 1366 × 768, and 1920 × 1080.
+  and visual regression snapshots at desktop and phone viewport sizes from 360 × 640 through
+  1920 × 1080.
 
 Run the same checks used by CI:
 
@@ -186,7 +194,7 @@ npm run test:e2e
 ```
 
 The Windows CI runner is intentional because the checked-in pixel baselines use the same
-system-font rendering as the targeted desktop Chromium environment.
+system-font rendering as the targeted Chromium environment.
 
 ## Saves and portable files
 
@@ -256,9 +264,9 @@ deploy it with the official GitHub Pages actions.
 
 ## Scope and compatibility
 
-The project targets current desktop Chromium with `OffscreenCanvas` in a dedicated worker.
-Mobile layouts, broad cross-browser fallbacks, audio, WebGPU/WASM acceleration, and automatic
-saving are intentionally outside the current scope.
+The project targets current Chromium with `OffscreenCanvas` in a dedicated worker and includes
+dedicated desktop and phone-width layouts. Broad cross-browser fallbacks, audio, WebGPU/WASM
+acceleration, and automatic saving are intentionally outside the current scope.
 
 ## License
 

@@ -1,4 +1,4 @@
-import { Activity, Atom, Battery, Blend, Bomb, Box, Circle, CirclePlay, Cloud, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, ScanSearch, Snowflake, Sparkles, Trash2, Trees, Waves, Wind, Zap } from 'lucide-react'
+import { Activity, Atom, Battery, Blend, Bomb, Box, Circle, CirclePlay, Cloud, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, ScanSearch, SlidersHorizontal, Snowflake, Sparkles, Trash2, Trees, Waves, Wind, Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { buildInspectionSections } from './inspection'
 import { MemoryCardDialog } from './MemoryCardDialog'
@@ -106,6 +106,7 @@ export function App() {
   const [simulationRate, setSimulationRate] = useState<SimulationRate>(1)
   const [ambientTemperature, setAmbientTemperature] = useState(AMBIENT_TEMPERATURE)
   const [panning, setPanning] = useState(false)
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false)
 
   const requestInspection = useCallback((point: Point) => {
     if (inspectionPending.current) return
@@ -480,9 +481,26 @@ export function App() {
     setStartup(false)
   }
 
-  function openMemory() {
+  function openMemory(event?: React.MouseEvent<HTMLButtonElement>) {
+    if (event) memoryButtonRef.current = event.currentTarget
     setRunning(false)
     setMemoryOpen(true)
+  }
+
+  function changeAmbientTemperature(temperature: number) {
+    setAmbientTemperature(temperature)
+    workerRef.current?.postMessage({ type: 'ambient', temperature })
+  }
+
+  function changeSimulationRate(rate: SimulationRate) {
+    setSimulationRate(rate)
+    workerRef.current?.postMessage({ type: 'rate', rate })
+  }
+
+  function useMobileInspection(mode: 'inspect' | 'monitor') {
+    if (mode === 'inspect') toggleInspect()
+    else toggleMonitor()
+    setMobileToolsOpen(false)
   }
 
   function loadSnapshot(snapshot: Snapshot) {
@@ -499,9 +517,25 @@ export function App() {
 
   return (
     <main className="page-shell">
-      <section className="device chamfer" aria-label="Kinetic Pixels simulation console">
+      <section className={`device chamfer ${mobileToolsOpen ? 'mobile-tools-open' : ''}`} aria-label="Kinetic Pixels simulation console">
         <div className="device-screw screw-one" aria-hidden="true" />
         <div className="device-screw screw-two" aria-hidden="true" />
+
+        <header className="mobile-topbar">
+          <button type="button" onClick={toggleRunning} aria-label={running ? 'Pause simulation' : 'Play simulation'}>
+            {running ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
+          </button>
+          <strong>Field 01</strong>
+          <button
+            type="button"
+            className={mobileToolsOpen ? 'active' : ''}
+            aria-label={mobileToolsOpen ? 'Close tools' : 'Open tools'}
+            aria-pressed={mobileToolsOpen}
+            onClick={() => setMobileToolsOpen((open) => !open)}
+          >
+            <Cog aria-hidden="true" />
+          </button>
+        </header>
 
         <aside className="left-rail halftone chamfer" aria-labelledby="elements-heading">
           <div className="rail-heading" id="elements-heading">Elements</div>
@@ -617,6 +651,13 @@ export function App() {
           </div>
         </section>
 
+        <section className="mobile-quick-controls" aria-label="Drawing controls">
+          <label htmlFor="mobile-brush-radius"><span>Brush</span><output>{radius}</output></label>
+          <input id="mobile-brush-radius" aria-label="Stroke size" type="range" min="1" max="20" value={radius} onChange={(event) => setRadius(Number(event.target.value))} />
+          <button className={eraser ? 'active' : ''} aria-pressed={eraser} onClick={toggleEraser}><Eraser aria-hidden="true" /><span>Eraser</span></button>
+          <button className={mixMode ? 'active' : ''} aria-pressed={mixMode} onClick={toggleMix}><Blend aria-hidden="true" /><span>Mix</span></button>
+        </section>
+
         <aside className="right-rail chamfer" aria-labelledby="controls-heading">
           <div className="control-top">
             <div className="rail-heading dark" id="controls-heading">Controls</div>
@@ -632,11 +673,7 @@ export function App() {
               max={MAXIMUM_ROOM_TEMPERATURE}
               step="5"
               value={ambientTemperature}
-              onChange={(event) => {
-                const temperature = Number(event.target.value)
-                setAmbientTemperature(temperature)
-                workerRef.current?.postMessage({ type: 'ambient', temperature })
-              }}
+              onChange={(event) => changeAmbientTemperature(Number(event.target.value))}
             />
             <div className="rate-control" role="group" aria-label="Simulation speed">
               <span>Time rate</span>
@@ -647,10 +684,7 @@ export function App() {
                     type="button"
                     className={simulationRate === rate ? 'active' : ''}
                     aria-pressed={simulationRate === rate}
-                    onClick={() => {
-                      setSimulationRate(rate)
-                      workerRef.current?.postMessage({ type: 'rate', rate })
-                    }}
+                    onClick={() => changeSimulationRate(rate)}
                   >
                     {rate === 0.5 ? '½×' : `${rate}×`}
                   </button>
@@ -671,9 +705,77 @@ export function App() {
               <span>{running ? 'Pause' : 'Play'}</span>
               <small>Space</small>
             </button>
-            <button ref={memoryButtonRef} className="memory-button" onClick={openMemory}><MemoryStick aria-hidden="true" /><span>Memory Card</span></button>
+            <button className="memory-button" onClick={openMemory}><MemoryStick aria-hidden="true" /><span>Memory Card</span></button>
           </div>
         </aside>
+
+        <section className="mobile-tools-panel" aria-labelledby="mobile-tools-heading">
+          <div className="mobile-tools-heading">
+            <span>System override · active</span>
+            <h2 id="mobile-tools-heading"><SlidersHorizontal aria-hidden="true" />Advanced controls</h2>
+          </div>
+
+          <section className="mobile-control-card">
+            <label htmlFor="mobile-room-temperature"><span>Room temperature</span><output>{ambientTemperature} °C</output></label>
+            <input
+              id="mobile-room-temperature"
+              aria-label="Mobile ambient temperature"
+              className="temperature-slider"
+              type="range"
+              min={MINIMUM_ROOM_TEMPERATURE}
+              max={MAXIMUM_ROOM_TEMPERATURE}
+              step="5"
+              value={ambientTemperature}
+              onChange={(event) => changeAmbientTemperature(Number(event.target.value))}
+            />
+          </section>
+
+          <section className="mobile-control-card">
+            <label htmlFor="mobile-field-zoom"><span>Field zoom</span><output>{Math.round(camera.zoom * 100)}%</output></label>
+            <input
+              id="mobile-field-zoom"
+              className="brush-slider"
+              type="range"
+              min={MIN_ZOOM * 100}
+              max={MAX_ZOOM * 100}
+              step={ZOOM_STEP * 100}
+              value={camera.zoom * 100}
+              onChange={(event) => setZoomAt(Number(event.target.value) / 100, 0.5, 0.5)}
+            />
+          </section>
+
+          <section className="mobile-control-card mobile-rate-card">
+            <span>Time rate</span>
+            <div role="group" aria-label="Mobile simulation speed">
+              {SIMULATION_RATES.map((rate) => (
+                <button
+                  key={rate}
+                  type="button"
+                  className={simulationRate === rate ? 'active' : ''}
+                  aria-pressed={simulationRate === rate}
+                  onClick={() => changeSimulationRate(rate)}
+                >
+                  {rate === 0.5 ? '½×' : `${rate}×`}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <div className="mobile-probe-grid">
+            <button className={inspectMode ? 'active' : ''} aria-pressed={inspectMode} onClick={() => useMobileInspection('inspect')}><ScanSearch aria-hidden="true" /><span>See stats</span><small>Live touch probe</small></button>
+            <button className={`monitor-button ${monitorMode ? 'active' : ''}`} aria-pressed={monitorMode} onClick={() => useMobileInspection('monitor')}><Activity aria-hidden="true" /><span>Monitor</span><small>Pin one pixel</small></button>
+          </div>
+
+          <button className="mobile-memory-card" onClick={openMemory}><MemoryStick aria-hidden="true" /><span><strong>Memory card</strong><small>3 local slots · JSON files</small></span></button>
+          <button className="mobile-back-button" onClick={() => setMobileToolsOpen(false)}>Back to sandbox</button>
+        </section>
+
+        <nav className="mobile-dock" aria-label="Sandbox actions">
+          <button className={running ? 'active' : ''} onClick={toggleRunning}>{running ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}<span>{running ? 'Pause' : 'Play'}</span></button>
+          <button className={mobileToolsOpen ? 'active' : ''} aria-pressed={mobileToolsOpen} onClick={() => setMobileToolsOpen((open) => !open)}><SlidersHorizontal aria-hidden="true" /><span>Tools</span></button>
+          <button className="destructive" onClick={clear}><Trash2 aria-hidden="true" /><span>Clear</span></button>
+          <button onClick={openMemory}><MemoryStick aria-hidden="true" /><span>Memory</span></button>
+        </nav>
       </section>
 
       <MemoryCardDialog

@@ -72,8 +72,8 @@ describe('material model', () => {
       expect(properties.ashYield).toBeGreaterThanOrEqual(0)
       expect(properties.ashYield).toBeLessThanOrEqual(1)
     }
-    expect(MATERIAL_REACTIONS.length).toBe(10)
-    expect(MATERIAL_REACTIONS.filter((reaction) => !reaction.materials.includes(MaterialId.Acid))).toHaveLength(5)
+    expect(MATERIAL_REACTIONS.length).toBe(11)
+    expect(MATERIAL_REACTIONS.filter((reaction) => !reaction.materials.includes(MaterialId.Acid))).toHaveLength(6)
     for (const materialId of [MaterialId.Wood, MaterialId.Plant, MaterialId.Coal, MaterialId.Rubber]) {
       expect(MATERIAL_PROPERTIES[materialId].ashYield).toBeGreaterThan(0)
       expect(MATERIAL_PROPERTIES[materialId].ashYield).toBeLessThan(1)
@@ -640,8 +640,20 @@ describe('specific chemistry and electrical networks', () => {
     const saltWorld = createWorld(34, false, 2, 1)
     const salt = place(saltWorld, 0, 0, MaterialId.Salt)
     const water = place(saltWorld, 1, 0, MaterialId.Water)
-    expect(reactMaterialPair(saltWorld, salt, water)).toBe(true)
+    const saltReaction = MATERIAL_REACTIONS.find((reaction) => reaction.materials[0] === MaterialId.Salt && reaction.materials[1] === MaterialId.Water)
+    expect(saltReaction?.chancePerSecond).toBeGreaterThan(0)
+    expect(saltReaction?.chancePerSecond).toBeLessThan(1)
+    for (let attempt = 0; attempt < 600 && saltWorld.material[salt] === MaterialId.Salt; attempt += 1) reactMaterialPair(saltWorld, salt, water)
     expect([...saltWorld.material]).toEqual([MaterialId.SaltWater, MaterialId.SaltWater])
+    expect([...saltWorld.state]).toEqual([80, 80])
+
+    const brineWorld = createWorld(341, false, 2, 1)
+    const brineSalt = place(brineWorld, 0, 0, MaterialId.Salt)
+    const brine = place(brineWorld, 1, 0, MaterialId.SaltWater)
+    brineWorld.state[brine] = 80
+    for (let attempt = 0; attempt < 1_200 && brineWorld.material[brineSalt] === MaterialId.Salt; attempt += 1) reactMaterialPair(brineWorld, brineSalt, brine)
+    expect([...brineWorld.material]).toEqual([MaterialId.SaltWater, MaterialId.SaltWater])
+    expect([...brineWorld.state]).toEqual([120, 120])
 
     const sodiumWorld = createWorld(35, false, 2, 1)
     const sodium = place(sodiumWorld, 0, 0, MaterialId.Sodium)

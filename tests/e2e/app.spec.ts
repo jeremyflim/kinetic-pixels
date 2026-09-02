@@ -52,6 +52,29 @@ test('starts with the wooden title, Sand, paused state, and instruction', async 
   expect(await materialCount(page, 4)).toBe(TITLE_WOOD_CELLS)
 })
 
+test('mobile console keeps the canvas primary and moves advanced controls into Tools', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 640 })
+  await expect(page.locator('.mobile-topbar')).toBeVisible()
+  await expect(page.locator('.viewport-panel')).toBeVisible()
+  await expect(page.locator('.right-rail')).toBeHidden()
+  await expect(page.locator('.material-grid')).toHaveCSS('overflow-x', 'auto')
+
+  await page.locator('.mobile-dock').getByRole('button', { name: 'Tools' }).click()
+  const tools = page.locator('.mobile-tools-panel')
+  await expect(tools).toBeVisible()
+  await expect(tools.getByLabel('Field zoom')).toHaveValue('100')
+  await tools.getByLabel('Field zoom').fill('200')
+  await expect(tools.getByLabel('Field zoom')).toHaveValue('200')
+  await tools.getByLabel('Field zoom').fill('100')
+  await tools.getByRole('button', { name: 'Monitor' }).click()
+  await expect(page.locator('.viewport-panel')).toBeVisible()
+  await expect(page.locator('canvas')).toHaveClass(/monitor-armed/)
+
+  await page.locator('canvas').click({ position: { x: 40, y: 40 } })
+  await expect(page.getByLabel('Pixel inspection')).toBeVisible()
+  await expect(page.getByLabel('Pixel inspection')).toContainText('Pixel monitor')
+})
+
 test('shows the complete paintable material palette inside the element rail', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 576 })
   const expected = [

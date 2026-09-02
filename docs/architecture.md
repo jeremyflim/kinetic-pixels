@@ -79,7 +79,9 @@ The sparse registry is limited to identity-specific chemistry. Plant growth rema
 behavior driven by a shared nutrition property on Water, Salt Water, and Soil.
 
 Water, Alcohol, Acid, and Salt Water participate in one aqueous-solution system. Water carries zero
-solute; adjacent compatible cells equalize concentration while conserving Alcohol fuel. Material
+solute; adjacent compatible cells equalize concentration while conserving Alcohol fuel. Solid Salt
+dissolves into both Water and existing brine through a finite, concentration-limited reaction, so
+fresh Water accepts it readily while increasingly saturated Salt Water slows down. Material
 identity records the dominant solute, so no diluted variants enter the palette. Concentration
 controls Alcohol flammability and boiling product, Acid corrosion rate, Salt Water phase thresholds
 and conductivity, and solution color. Different non-water solutes intentionally do not combine in

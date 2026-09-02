@@ -153,7 +153,8 @@ These are the only entries in the pair registry:
 | Acid + Wood | Acid | 15%/s | Wood becomes Empty, reduced by Wood hardness |
 | Acid + Metal | Acid | 45%/s | Acid becomes dilute Salt Water; Metal releases Hydrogen |
 | Acid + Copper | Acid | 28%/s | Acid becomes dilute Salt Water; Copper releases Hydrogen |
-| Salt + Water | Salt | Immediate on contact | Both cells become half-strength Salt Water |
+| Salt + Water | Salt | 45%/s base chance | Both cells become half-strength Salt Water; dissolution is visible rather than immediate |
+| Salt + Salt Water | Salt | 45%/s base chance, reduced by concentration | The crystal joins the solution and raises both cells' Salt concentration |
 | Salt + Ice | Salt | 90%/s | Both cells become cold half-strength Salt Water |
 | Sodium + Water | Sodium | 100%/s | Sodium becomes Fire; Water becomes Hydrogen |
 | Sodium + Salt Water | Sodium | 100%/s | Sodium becomes Fire; Salt Water becomes Hydrogen |

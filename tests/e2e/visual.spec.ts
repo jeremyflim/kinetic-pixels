@@ -42,3 +42,31 @@ test('zoom cube stays centered over its vertical track', async ({ page }) => {
     maxDiffPixelRatio: 0.001,
   })
 })
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 360, height: 640 },
+]) {
+  test(`mobile sandbox and tools fit ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await page.goto('./')
+    await expect(page.locator('canvas')).toHaveAttribute('data-ready', 'true')
+    const deviceBox = await page.locator('.device').boundingBox()
+    if (!deviceBox) throw new Error('Mobile device did not render')
+    expect(deviceBox.x).toBe(0)
+    expect(deviceBox.y).toBe(0)
+    expect(deviceBox.width).toBe(viewport.width)
+    expect(deviceBox.height).toBe(viewport.height)
+    await expect(page.locator('.mobile-topbar')).toBeVisible()
+    await expect(page.locator('.right-rail')).toBeHidden()
+    await expect(page).toHaveScreenshot(`mobile-sandbox-${viewport.width}x${viewport.height}.png`, { animations: 'disabled', maxDiffPixelRatio: 0.01 })
+
+    await page.locator('.mobile-dock').getByRole('button', { name: 'Tools' }).click()
+    await expect(page.locator('.mobile-tools-panel')).toBeVisible()
+    await expect(page.locator('.viewport-panel')).toBeHidden()
+    const dockBox = await page.locator('.mobile-dock').boundingBox()
+    if (!dockBox) throw new Error('Mobile action dock did not render')
+    expect(dockBox.y + dockBox.height).toBeLessThanOrEqual(viewport.height)
+    await expect(page).toHaveScreenshot(`mobile-tools-${viewport.width}x${viewport.height}.png`, { animations: 'disabled', maxDiffPixelRatio: 0.01 })
+  })
+}
