@@ -258,7 +258,7 @@ function clearStatus(world: World, index: number, flag: number): void {
   if (world.status[index] !== previous) markCellActivity(world, index, ActivityFlag.Movement | ActivityFlag.Visual)
 }
 
-function swap(world: World, first: number, second: number): void {
+export function swapCells(world: World, first: number, second: number): void {
   const material = world.material[first]
   const state = world.state[first]
   const status = world.status[first]
@@ -295,7 +295,7 @@ function swap(world: World, first: number, second: number): void {
   markCellActivity(world, second, ActivityFlag.All, true)
 }
 
-function move(world: World, source: number, destination: number): void { swap(world, source, destination) }
+function move(world: World, source: number, destination: number): void { swapCells(world, source, destination) }
 
 export function emptyCell(world: World, index: number): void {
   world.material[index] = MaterialId.Empty
@@ -364,7 +364,7 @@ export const MATERIAL_REACTIONS: readonly MaterialReaction[] = [
   { materials: [MaterialId.Acid, MaterialId.Wood], initiator: MaterialId.Acid, chancePerSecond: 0.15, scaleByCorrosion: true, b: { product: MaterialId.Empty } },
   { materials: [MaterialId.Acid, MaterialId.Metal], initiator: MaterialId.Acid, chancePerSecond: 0.45, scaleByCorrosion: true, a: { product: MaterialId.SaltWater, concentration: 80 }, b: { product: MaterialId.Hydrogen, temperature: 120 } },
   { materials: [MaterialId.Acid, MaterialId.Copper], initiator: MaterialId.Acid, chancePerSecond: 0.28, scaleByCorrosion: true, a: { product: MaterialId.SaltWater, concentration: 80 }, b: { product: MaterialId.Hydrogen, temperature: 120 } },
-  { materials: [MaterialId.Salt, MaterialId.Water], initiator: MaterialId.Salt, chancePerSecond: 0.95, a: { product: MaterialId.SaltWater, concentration: 80 }, b: { product: MaterialId.SaltWater, concentration: 80 } },
+  { materials: [MaterialId.Salt, MaterialId.Water], initiator: MaterialId.Salt, chancePerSecond: 1, a: { product: MaterialId.SaltWater, concentration: 80 }, b: { product: MaterialId.SaltWater, concentration: 80 } },
   { materials: [MaterialId.Salt, MaterialId.Ice], initiator: MaterialId.Salt, chancePerSecond: 0.9, a: { product: MaterialId.SaltWater, temperature: -2, concentration: 80 }, b: { product: MaterialId.SaltWater, temperature: -2, concentration: 80 } },
   { materials: [MaterialId.Sodium, MaterialId.Water], initiator: MaterialId.Sodium, chancePerSecond: 1, a: { product: MaterialId.Fire, temperature: 900 }, b: { product: MaterialId.Hydrogen, temperature: 500 } },
   { materials: [MaterialId.Sodium, MaterialId.SaltWater], initiator: MaterialId.Sodium, chancePerSecond: 1, a: { product: MaterialId.Fire, temperature: 900 }, b: { product: MaterialId.Hydrogen, temperature: 500 } },
@@ -466,7 +466,7 @@ function tryVerticalMove(
       return true
     }
     if (allowDisplacement && canDisplace(materialId, world.material[target] as MaterialIdValue)) {
-      swap(world, index, target)
+      swapCells(world, index, target)
       return true
     }
   }

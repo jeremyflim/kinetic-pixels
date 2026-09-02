@@ -1,4 +1,4 @@
-import { Activity, Atom, Battery, Bomb, Box, Circle, CirclePlay, Cloud, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, ScanSearch, Snowflake, Sparkles, Trash2, Trees, Waves, Wind, Zap } from 'lucide-react'
+import { Activity, Atom, Battery, Blend, Bomb, Box, Circle, CirclePlay, Cloud, Cog, Droplet, Droplets, Eraser, Flame, FlaskConical, Gem, Leaf, MemoryStick, Mountain, Pause, Play, ScanSearch, Snowflake, Sparkles, Trash2, Trees, Waves, Wind, Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { buildInspectionSections } from './inspection'
 import { MemoryCardDialog } from './MemoryCardDialog'
@@ -49,6 +49,7 @@ interface PendingStroke {
   radius: number
   materialId: number
   erase: boolean
+  mix: boolean
 }
 
 declare global {
@@ -92,6 +93,7 @@ export function App() {
   const [running, setRunningState] = useState(false)
   const [selectedMaterial, setSelectedMaterial] = useState<number>(MaterialId.Sand)
   const [eraser, setEraser] = useState(false)
+  const [mixMode, setMixMode] = useState(false)
   const [radius, setRadius] = useState(5)
   const [startup, setStartup] = useState(true)
   const [memoryOpen, setMemoryOpen] = useState(false)
@@ -173,12 +175,18 @@ export function App() {
   }, [setRunning])
 
   const toggleEraser = useCallback(() => {
+    setMixMode(false)
     setEraser((active) => {
       if (!active) previousMaterial.current = selectedMaterial
       else setSelectedMaterial(previousMaterial.current)
       return !active
     })
   }, [selectedMaterial])
+
+  const toggleMix = useCallback(() => {
+    setEraser(false)
+    setMixMode((active) => !active)
+  }, [])
 
   const toggleInspect = useCallback(() => {
     if (monitorMode && monitoredPoint) return
@@ -244,6 +252,8 @@ export function App() {
         toggleRunning()
       } else if (event.key.toLowerCase() === 'e') {
         toggleEraser()
+      } else if (event.key.toLowerCase() === 'm') {
+        toggleMix()
       } else if (event.key.toLowerCase() === 'i') {
         toggleInspect()
       } else if (event.key === '-') {
@@ -254,7 +264,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [cancelMonitor, memoryOpen, monitorMode, monitoredPoint, toggleEraser, toggleInspect, toggleRunning])
+  }, [cancelMonitor, memoryOpen, monitorMode, monitoredPoint, toggleEraser, toggleInspect, toggleMix, toggleRunning])
 
   function pointFromClient(clientX: number, clientY: number, canvas: HTMLCanvasElement): Point {
     const bounds = canvas.getBoundingClientRect()
@@ -314,6 +324,17 @@ export function App() {
   })
 
   function postStroke(stroke: PendingStroke) {
+    if (stroke.mix) {
+      workerRef.current?.postMessage({
+        type: 'mix',
+        fromX: stroke.from.x,
+        fromY: stroke.from.y,
+        toX: stroke.to.x,
+        toY: stroke.to.y,
+        radius: stroke.radius,
+      })
+      return
+    }
     workerRef.current?.postMessage({
       type: 'stroke',
       fromX: stroke.from.x,
@@ -338,11 +359,11 @@ export function App() {
 
   function queueStroke(from: Point, to: Point) {
     const queued = pendingStroke.current
-    if (queued && queued.radius === radius && queued.materialId === selectedMaterial && queued.erase === eraser) {
+    if (queued && queued.radius === radius && queued.materialId === selectedMaterial && queued.erase === eraser && queued.mix === mixMode) {
       queued.to = to
     } else {
       flushPendingStroke()
-      pendingStroke.current = { from, to, radius, materialId: selectedMaterial, erase: eraser }
+      pendingStroke.current = { from, to, radius, materialId: selectedMaterial, erase: eraser, mix: mixMode }
     }
     if (strokeFrame.current === null) {
       strokeFrame.current = requestAnimationFrame(() => {
@@ -394,7 +415,7 @@ export function App() {
       setStartup(false)
       setRunning(true)
     }
-    postStroke({ from: point, to: point, radius, materialId: selectedMaterial, erase: eraser })
+    postStroke({ from: point, to: point, radius, materialId: selectedMaterial, erase: eraser, mix: mixMode })
     startContinuousStroke()
   }
 
@@ -446,6 +467,7 @@ export function App() {
     setSelectedMaterial(materialId)
     previousMaterial.current = materialId
     setEraser(false)
+    setMixMode(false)
   }
 
   function clear() {
@@ -470,7 +492,7 @@ export function App() {
   }
 
   const currentMaterial = PAINTABLE_MATERIALS.find((material) => material.id === selectedMaterial)
-  const toolLabel = eraser ? 'Eraser' : currentMaterial?.label ?? 'Sand'
+  const toolLabel = eraser ? 'Eraser' : mixMode ? 'Mix' : currentMaterial?.label ?? 'Sand'
   const inspectionSections = inspection ? buildInspectionSections(inspection) : []
   const monitorArmed = monitorMode && !monitoredPoint
   const reticlePoint = monitorMode ? monitoredPoint : inspectMode ? preview : null
@@ -486,7 +508,7 @@ export function App() {
           <div className="material-grid">
             {PAINTABLE_MATERIALS.map((material, index) => {
               const Icon = ICONS[material.key]
-              const selected = !eraser && selectedMaterial === material.id
+              const selected = !eraser && !mixMode && selectedMaterial === material.id
               return (
                 <button
                   key={material.id}
@@ -533,10 +555,10 @@ export function App() {
               >
                 <canvas
                   ref={canvasRef}
-                  className={`${inspectMode || monitorMode ? 'inspecting' : ''} ${monitorArmed ? 'monitor-armed' : ''} ${panning ? 'panning' : ''}`.trim()}
+                  className={`${inspectMode || monitorMode ? 'inspecting' : ''} ${monitorArmed ? 'monitor-armed' : ''} ${mixMode ? 'mixing-tool' : ''} ${panning ? 'panning' : ''}`.trim()}
                   width={GRID_WIDTH}
                   height={GRID_HEIGHT}
-                  aria-label={`Interactive ${GRID_WIDTH} by ${GRID_HEIGHT} cell pixel physics field. Click, hold, or drag to paint the selected material.`}
+                  aria-label={`Interactive ${GRID_WIDTH} by ${GRID_HEIGHT} cell pixel physics field. Click, hold, or drag to ${mixMode ? 'mix movable pixels' : eraser ? 'erase pixels' : 'paint the selected material'}.`}
                   data-ready={ready}
                   onPointerDown={onPointerDown}
                   onPointerMove={onPointerMove}
@@ -637,9 +659,10 @@ export function App() {
             </div>
             <div className="utility-grid">
               <button className={`console-button ${eraser ? 'active' : ''}`} aria-pressed={eraser} onClick={toggleEraser}><Eraser aria-hidden="true" /><span>Eraser</span><kbd>E</kbd></button>
-              <button className="console-button destructive" onClick={clear}><Trash2 aria-hidden="true" /><span>Clear</span></button>
+              <button className={`console-button ${mixMode ? 'active' : ''}`} aria-pressed={mixMode} onClick={toggleMix}><Blend aria-hidden="true" /><span>Mix</span><kbd>M</kbd></button>
               <button className={`console-button inspect-button ${inspectMode ? 'active' : ''}`} aria-pressed={inspectMode} onClick={toggleInspect}><ScanSearch aria-hidden="true" /><span>See stats</span><kbd>I</kbd></button>
               <button className={`console-button inspect-button monitor-button ${monitorMode ? 'active' : ''}`} aria-pressed={monitorMode} onClick={toggleMonitor}><Activity aria-hidden="true" /><span>Monitor</span></button>
+              <button className="console-button destructive" onClick={clear}><Trash2 aria-hidden="true" /><span>Clear</span></button>
             </div>
           </div>
           <div className="control-bottom halftone">

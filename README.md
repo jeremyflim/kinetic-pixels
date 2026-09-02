@@ -2,7 +2,7 @@
 
 **[Play the live build →](https://jeremyflim.github.io/kinetic-pixels/)**
 
-Kinetic Pixels is a deterministic, browser-only pixel-physics sandbox presented as a
+Kinetic Pixels is a solo project—a deterministic, browser-only pixel-physics sandbox presented as a
 pink-and-lavender molded-plastic console. Its 192 × 180 world starts with a wooden title made
 from ordinary simulation cells: pour Sand over it, redirect Water through it, inspect its
 temperature, erase it, or set it on fire.
@@ -71,7 +71,8 @@ the same way.
   cells every six ticks. Simulation effects cannot destroy Source; the Eraser can.
 - Click, hold, or drag on the field to paint. A held pointer continually reapplies the brush, and
   the first ordinary field click starts the simulation.
-- Use `Space` to Play/Pause and `E` to toggle the Eraser.
+- Use `Space` to Play/Pause, `E` to toggle the Eraser, and `M` to toggle Mix. Mix stirs movable
+  pixels inside the brush without creating or deleting material; immovable structures stay fixed.
 - Use `-`, `=`, or `+` to adjust the circular brush radius from 1–20 cells.
 - Set Room temperature from −100–500°C to change the environmental baseline. Empty air moves
   toward that target, and ordinary newly painted materials begin at it; authored sources such as
@@ -165,12 +166,12 @@ Playwright verifies the user-visible contract rather than internal React state.
 
 The current suite contains:
 
-- **67 Vitest tests** covering material behavior, activity scheduling, full-grid thermal comparison,
+- **68 Vitest tests** covering material behavior, activity scheduling, full-grid thermal comparison,
   dirty-region rendering, electrical networks, overlapping-pulse
   termination, aqueous dilution, flow
   properties, Source, heat and phase transitions, moisture, chemistry, sparse combustion residue,
   explosions, deterministic ordering, clearing, save migration, and serialization.
-- **28 Playwright tests** covering pointer and keyboard flows, Monitor states, time rate, paused
+- **29 Playwright tests** covering pointer and keyboard flows, Mix, Monitor states, time rate, paused
   editing, long strokes, saves, import/export validation, focus behavior, responsive geometry,
   and visual regression snapshots at 1024 × 576, 1366 × 768, and 1920 × 1080.
 

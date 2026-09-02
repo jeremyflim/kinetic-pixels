@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AMBIENT_TEMPERATURE, THERMAL_ENERGY_UNIT_J_M3 } from './constants'
-import { clearWorld, createWorld, paintCircle, paintStroke, replaceWorld, snapshotWorld, stepWorld } from './engine'
+import { clearWorld, createWorld, mixStroke, paintCircle, paintStroke, replaceWorld, snapshotWorld, stepWorld } from './engine'
 import { effectiveElectricalConductivity, launchElectricalPulse, updateElectricity } from './electricity'
 import {
   FIRE_LIFETIME_MIN,
@@ -640,7 +640,7 @@ describe('specific chemistry and electrical networks', () => {
     const saltWorld = createWorld(34, false, 2, 1)
     const salt = place(saltWorld, 0, 0, MaterialId.Salt)
     const water = place(saltWorld, 1, 0, MaterialId.Water)
-    for (let attempt = 0; attempt < 600 && saltWorld.material[salt] === MaterialId.Salt; attempt += 1) reactMaterialPair(saltWorld, salt, water)
+    expect(reactMaterialPair(saltWorld, salt, water)).toBe(true)
     expect([...saltWorld.material]).toEqual([MaterialId.SaltWater, MaterialId.SaltWater])
 
     const sodiumWorld = createWorld(35, false, 2, 1)
@@ -800,6 +800,26 @@ describe('specific chemistry and electrical networks', () => {
 })
 
 describe('world commands and persistence', () => {
+  it('mixes movable cells without changing material counts, state, or immovable structures', () => {
+    const world = createWorld(301, false, 10, 6)
+    for (let y = 0; y < world.height; y += 1) {
+      for (let x = 0; x < world.width; x += 1) place(world, x, y, x < 5 ? MaterialId.Sand : MaterialId.Gunpowder)
+    }
+    const stone = place(world, 5, 3, MaterialId.Stone)
+    world.temperature[index(world, 1, 1)] = 111
+    world.temperature[index(world, 8, 4)] = 222
+    const before = [...world.material]
+
+    mixStroke(world, 4.5, 2.5, 5.5, 3.5, 5)
+
+    expect([...world.material]).not.toEqual(before)
+    expect([...world.material].filter((material) => material === MaterialId.Sand)).toHaveLength(30)
+    expect([...world.material].filter((material) => material === MaterialId.Gunpowder)).toHaveLength(29)
+    expect(world.material[stone]).toBe(MaterialId.Stone)
+    expect([...world.temperature]).toContain(111)
+    expect([...world.temperature]).toContain(222)
+  })
+
   it('produces equal grids for equal seeds and commands', () => {
     const first = createWorld(123, false, 20, 20)
     const second = createWorld(123, false, 20, 20)

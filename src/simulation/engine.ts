@@ -1,8 +1,8 @@
-import { MATERIALS, MaterialId, initializeTransientState } from './materials'
+import { MATERIALS, MaterialId, initializeTransientState, swapCells } from './materials'
 import { AMBIENT_TEMPERATURE } from './constants'
 import { updatePhysicalWorld } from './physics'
 import { launchElectricalPulse, updateElectricity } from './electricity'
-import { normalizeSeed } from './random'
+import { normalizeSeed, randomInt } from './random'
 import { rasterizeTitle } from './title'
 import { GRID_HEIGHT, GRID_WIDTH, type Snapshot, type UpdateContext, type World } from './types'
 import {
@@ -205,6 +205,42 @@ export function paintStroke(world: World, fromX: number, fromY: number, toX: num
   for (let step = 0; step <= steps; step += 1) {
     const progress = step / steps
     paintCircle(world, fromX + (toX - fromX) * progress, fromY + (toY - fromY) * progress, radius, materialId, erase)
+  }
+}
+
+function isMixableCell(world: World, index: number): boolean {
+  return world.material[index] === MaterialId.Empty || MATERIAL_MOBILITY[world.material[index]] >= MOBILITY_CODE.powder
+}
+
+export function mixCircle(world: World, centerX: number, centerY: number, radius: number): void {
+  const safeRadius = Math.max(1, Math.min(20, Math.round(radius)))
+  const minimumX = Math.max(0, Math.floor(centerX - safeRadius))
+  const maximumX = Math.min(world.width - 1, Math.ceil(centerX + safeRadius))
+  const minimumY = Math.max(0, Math.floor(centerY - safeRadius))
+  const maximumY = Math.min(world.height - 1, Math.ceil(centerY + safeRadius))
+  const squaredRadius = safeRadius * safeRadius
+  const attempts = Math.min(256, Math.max(4, Math.ceil(squaredRadius * 0.75)))
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const firstX = randomInt(world, minimumX, maximumX)
+    const firstY = randomInt(world, minimumY, maximumY)
+    const secondX = randomInt(world, minimumX, maximumX)
+    const secondY = randomInt(world, minimumY, maximumY)
+    if ((firstX - centerX) ** 2 + (firstY - centerY) ** 2 > squaredRadius
+      || (secondX - centerX) ** 2 + (secondY - centerY) ** 2 > squaredRadius) continue
+    const first = firstY * world.width + firstX
+    const second = secondY * world.width + secondX
+    if (first === second || !isMixableCell(world, first) || !isMixableCell(world, second)) continue
+    swapCells(world, first, second)
+  }
+}
+
+export function mixStroke(world: World, fromX: number, fromY: number, toX: number, toY: number, radius: number): void {
+  const distance = Math.hypot(toX - fromX, toY - fromY)
+  const steps = Math.max(1, Math.ceil(distance / Math.max(1, radius * 0.5)))
+  for (let step = 0; step <= steps; step += 1) {
+    const progress = step / steps
+    mixCircle(world, fromX + (toX - fromX) * progress, fromY + (toY - fromY) * progress, radius)
   }
 }
 

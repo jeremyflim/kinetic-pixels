@@ -134,7 +134,7 @@ tiles are awake, traversal switches to the cheaper dense linear scan.
 
 ## Worker protocol
 
-The UI sends compact commands for initialization, play state, time rate, strokes, clearing,
+The UI sends compact commands for initialization, play state, time rate, paint/erase/mix strokes, clearing,
 snapshots, single-cell inspection, and world replacement. See Stats and Monitor poll one selected cell at
 12.5 Hz; the worker returns only that small record and never mirrors the live grid into React.
 Pointer coordinates are converted to logical cells before commands are posted, and stroke
@@ -156,6 +156,10 @@ comparison, color calculation, nor canvas upload.
 The fixed viewport can magnify its canvas from 100–400%; pointer-centered wheel calculations
 preserve the sampled world cell while the full-height bezel slider provides keyboard and direct
 control without changing the playfield dimensions.
+
+Mix strokes randomly exchange movable cells and empty space within the active brush while leaving
+immovable cells fixed. The same full-state swap used by ordinary movement preserves material state,
+charge, temperature, moisture, fuel, liquid mass, phase progress, and fractional thermal energy.
 
 ## Thermal references and representative assumptions
 

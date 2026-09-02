@@ -369,6 +369,43 @@ test('paused painting, interpolation, and erasing update immediately', async ({ 
   await expect(page.getByRole('button', { name: 'Stone' })).toHaveAttribute('aria-pressed', 'true')
 })
 
+test('Mix stirs movable pixels without creating or deleting material', async ({ page }) => {
+  await page.keyboard.press('Space')
+  await page.keyboard.press('Space')
+  const canvas = page.locator('canvas')
+  const box = await canvas.boundingBox()
+  if (!box) throw new Error('Canvas did not render')
+
+  await page.getByLabel('Brush radius').fill('6')
+  await page.mouse.move(box.x + 35, box.y + 35)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 105, box.y + 35)
+  await page.mouse.up()
+  await page.getByRole('button', { name: 'Gunpowder' }).click()
+  await page.mouse.move(box.x + 115, box.y + 35)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 185, box.y + 35)
+  await page.mouse.up()
+
+  const before = await page.evaluate(async () => Array.from((await window.__KINETIC_PIXELS__!.snapshot()).material))
+  await page.getByRole('button', { name: 'Mix' }).click()
+  await expect(page.getByRole('button', { name: 'Mix' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.tool-readout strong')).toHaveText('Mix')
+  await page.getByLabel('Brush radius').fill('12')
+  await page.mouse.move(box.x + 75, box.y + 35)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 145, box.y + 35, { steps: 4 })
+  await page.mouse.up()
+  const after = await page.evaluate(async () => Array.from((await window.__KINETIC_PIXELS__!.snapshot()).material))
+
+  expect(after).not.toEqual(before)
+  expect(after.filter((material) => material === 1)).toHaveLength(before.filter((material) => material === 1).length)
+  expect(after.filter((material) => material === 14)).toHaveLength(before.filter((material) => material === 14).length)
+  await page.keyboard.press('m')
+  await expect(page.getByRole('button', { name: 'Mix' })).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.locator('.tool-readout strong')).toHaveText('Gunpowder')
+})
+
 test('radius shortcuts clamp and adjust the control', async ({ page }) => {
   const slider = page.getByLabel('Brush radius')
   await expect(slider).toHaveValue('5')

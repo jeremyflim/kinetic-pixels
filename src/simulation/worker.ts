@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import { clearWorld, createWorld, paintStroke, replaceWorld, snapshotWorld, stepWorld } from './engine'
+import { clearWorld, createWorld, mixStroke, paintStroke, replaceWorld, snapshotWorld, stepWorld } from './engine'
 import { MAXIMUM_ROOM_TEMPERATURE, MINIMUM_ROOM_TEMPERATURE } from './constants'
 import { effectiveElectricalConductivity } from './electricity'
 import { MATERIAL_PROPERTIES, type MaterialIdValue } from './materials'
@@ -13,6 +13,7 @@ type WorkerCommand =
   | { type: 'init'; canvas: OffscreenCanvas; seed: number }
   | { type: 'running'; running: boolean }
   | { type: 'stroke'; fromX: number; fromY: number; toX: number; toY: number; radius: number; materialId: number; erase: boolean }
+  | { type: 'mix'; fromX: number; fromY: number; toX: number; toY: number; radius: number }
   | { type: 'clear' }
   | { type: 'snapshot'; requestId: number }
   | { type: 'inspect'; requestId: number; x: number; y: number }
@@ -101,6 +102,10 @@ self.onmessage = (event: MessageEvent<WorkerCommand>) => {
   }
   if (command.type === 'stroke') {
     paintStroke(world, command.fromX, command.fromY, command.toX, command.toY, command.radius, command.materialId, command.erase)
+    if (!running) draw()
+  }
+  if (command.type === 'mix') {
+    mixStroke(world, command.fromX, command.fromY, command.toX, command.toY, command.radius)
     if (!running) draw()
   }
   if (command.type === 'clear') {

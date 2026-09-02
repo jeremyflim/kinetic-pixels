@@ -309,6 +309,8 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 }
 .canvas-stage canvas.inspecting { cursor: cell; }
 .canvas-stage canvas.monitor-armed { cursor: crosshair; }
+.canvas-stage canvas.mixing-tool { cursor: grab; }
+.canvas-stage canvas.mixing-tool:active { cursor: grabbing; }
 .canvas-stage canvas.panning { cursor: grabbing; }
 
 .zoom-gauge {
@@ -562,7 +564,15 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 .console-button span { grid-area: label; }
 .console-button kbd { grid-area: key; padding: 0.15cqw 0.3cqw; color: white; background: var(--deep-chrome); font: inherit; }
 .console-button.active { background: var(--amber); box-shadow: inset 0.18cqw 0.2cqw 0.35cqw rgb(83 61 108 / 0.35); }
-.console-button.destructive { color: white; background: var(--hot-pink); border-color: var(--ink); }
+.console-button.destructive {
+  grid-column: 1 / -1;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: 'icon label';
+  min-height: 3.4cqw;
+  color: white;
+  background: var(--hot-pink);
+  border-color: var(--ink);
+}
 .console-button.inspect-button { min-height: 4.25cqw; grid-template-columns: auto 1fr auto; grid-template-areas: 'icon label key'; }
 .console-button.monitor-button { grid-template-columns: auto 1fr; grid-template-areas: 'icon label'; }
 

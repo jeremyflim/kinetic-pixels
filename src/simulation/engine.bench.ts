@@ -1,5 +1,5 @@
 import { bench, describe } from 'vitest'
-import { createWorld, stepWorld } from './engine'
+import { createWorld, mixStroke, stepWorld } from './engine'
 import { MATERIAL_PROPERTIES, MaterialId, StatusFlag, initializeTransientState } from './materials'
 
 function filled(materialId: number) {
@@ -57,4 +57,12 @@ describe('192 × 180 simulation tick', () => {
     }
   }
   bench('burning Wood, Fire, and Smoke', () => stepWorld(combustion))
+
+  const mixedPowders = createWorld(0xabc123, false)
+  for (let index = 0; index < mixedPowders.material.length; index += 1) {
+    const materialId = index % 2 === 0 ? MaterialId.Sand : MaterialId.Gunpowder
+    mixedPowders.material[index] = materialId
+    initializeTransientState(mixedPowders, index, materialId)
+  }
+  bench('maximum-radius Mix tool', () => mixStroke(mixedPowders, mixedPowders.width / 2, mixedPowders.height / 2, mixedPowders.width / 2, mixedPowders.height / 2, 20))
 })
