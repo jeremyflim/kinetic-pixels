@@ -15,6 +15,7 @@ import {
   initializeTransientState,
   reactMaterialPair,
   solutionConcentration,
+  solutionStrength,
   StatusFlag,
 } from './materials'
 import { updatePhysicalWorld } from './physics'
@@ -654,6 +655,14 @@ describe('specific chemistry and electrical networks', () => {
     for (let attempt = 0; attempt < 1_200 && brineWorld.material[brineSalt] === MaterialId.Salt; attempt += 1) reactMaterialPair(brineWorld, brineSalt, brine)
     expect([...brineWorld.material]).toEqual([MaterialId.SaltWater, MaterialId.SaltWater])
     expect([...brineWorld.state]).toEqual([120, 120])
+
+    const saturatedWorld = createWorld(342, false, 2, 1)
+    const undissolvedSalt = place(saturatedWorld, 0, 0, MaterialId.Salt)
+    const saturatedBrine = place(saturatedWorld, 1, 0, MaterialId.SaltWater)
+    expect(solutionStrength(saturatedWorld.material[saturatedBrine], saturatedWorld.state[saturatedBrine])).toBe(1)
+    for (let attempt = 0; attempt < 2_000; attempt += 1) reactMaterialPair(saturatedWorld, undissolvedSalt, saturatedBrine)
+    expect([...saturatedWorld.material]).toEqual([MaterialId.Salt, MaterialId.SaltWater])
+    expect(solutionStrength(saturatedWorld.material[saturatedBrine], saturatedWorld.state[saturatedBrine])).toBe(1)
 
     const sodiumWorld = createWorld(35, false, 2, 1)
     const sodium = place(sodiumWorld, 0, 0, MaterialId.Sodium)

@@ -439,7 +439,7 @@ export function reactMaterialPair(world: World, actorIndex: number, targetIndex:
     if (reaction.dissolution) {
       const solutionIndex = world.material[aIndex] === MaterialId.Salt ? bIndex : aIndex
       const solutionMaterial = world.material[solutionIndex] as MaterialIdValue
-      probability *= Math.max(0.08, 1 - solutionConcentration(solutionMaterial, world.state[solutionIndex]) / 255)
+      probability *= Math.max(0, 1 - solutionStrength(solutionMaterial, world.state[solutionIndex]))
     }
     if (!chance(world, probability)) continue
     if (reaction.dissolution) {
