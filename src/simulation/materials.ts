@@ -1,6 +1,7 @@
 import { AMBIENT_TEMPERATURE, HEAT_EMISSION_INTERVAL, MAXIMUM_TEMPERATURE, MINIMUM_TEMPERATURE, THERMAL_ENERGY_UNIT_J_M3, WATER_BOILING_LATENT_SCALE } from './constants'
 import { chance, randomInt } from './random'
 import type { MaterialDefinition, MaterialProperties, UpdateContext, World } from './types'
+import { ActivityFlag, keepCellActive, markCellActivity } from './activity'
 
 export const MaterialId = {
   Empty: 0, Sand: 1, Water: 2, Stone: 3, Wood: 4, Fire: 5, Smoke: 6,
@@ -246,9 +247,15 @@ export function solutionStrength(materialId: number, state: number): number {
 function at(world: World, x: number, y: number): number { return y * world.width + x }
 function inBounds(world: World, x: number, y: number): boolean { return x >= 0 && x < world.width && y >= 0 && y < world.height }
 function hasStatus(world: World, index: number, flag: number): boolean { return Boolean(world.status[index] & flag) }
-function addStatus(world: World, index: number, flag: number): void { world.status[index] |= flag }
+function addStatus(world: World, index: number, flag: number): void {
+  const previous = world.status[index]
+  world.status[index] |= flag
+  if (world.status[index] !== previous) markCellActivity(world, index, ActivityFlag.Movement | ActivityFlag.Visual)
+}
 function clearStatus(world: World, index: number, flag: number): void {
+  const previous = world.status[index]
   world.status[index] &= ~flag
+  if (world.status[index] !== previous) markCellActivity(world, index, ActivityFlag.Movement | ActivityFlag.Visual)
 }
 
 function swap(world: World, first: number, second: number): void {
@@ -284,6 +291,8 @@ function swap(world: World, first: number, second: number): void {
   world.thermalRemainder[second] = thermalRemainder
   world.updatedAt[first] = world.tick
   world.updatedAt[second] = world.tick
+  markCellActivity(world, first, ActivityFlag.All, true)
+  markCellActivity(world, second, ActivityFlag.All, true)
 }
 
 function move(world: World, source: number, destination: number): void { swap(world, source, destination) }
@@ -299,6 +308,7 @@ export function emptyCell(world: World, index: number): void {
   world.phaseProgress[index] = 0
   world.thermalRemainder[index] = 0
   world.updatedAt[index] = world.tick
+  markCellActivity(world, index, ActivityFlag.All, true)
 }
 
 export function setMaterialCell(world: World, index: number, materialId: MaterialIdValue, temperature?: number): void {
@@ -323,6 +333,7 @@ export function addTemperature(world: World, index: number, energy: number): voi
   world.thermalRemainder[index] = nextTemperature === MINIMUM_TEMPERATURE || nextTemperature === MAXIMUM_TEMPERATURE
     ? 0
     : totalEnergy - change * capacity
+  markCellActivity(world, index, ActivityFlag.Thermal | ActivityFlag.Moisture | ActivityFlag.Visual)
 }
 
 function neighbors(world: World, x: number, y: number): number[] {
@@ -395,6 +406,8 @@ export function reactMaterialPair(world: World, actorIndex: number, targetIndex:
   if ((REACTION_TARGET_MASK[actor] & ((1 << target) >>> 0)) === 0) return false
   const reactions = REACTIONS_BY_PAIR[reactionKey(actor, target)]
   if (!reactions) return false
+  keepCellActive(world, actorIndex, ActivityFlag.Movement)
+  keepCellActive(world, targetIndex, ActivityFlag.Movement)
   for (const reaction of reactions) {
     if (!isReactionInitiator(reaction, actor)) continue
     const sameOrder = reaction.materials[0] === actor && reaction.materials[1] === target
@@ -474,15 +487,20 @@ function updateSource(world: World, { index, x, y }: UpdateContext): void {
       const materialId = world.material[target] as MaterialIdValue
       return materialId !== MaterialId.Empty && materialId !== MaterialId.Source
     })
-    if (touchingMaterial !== undefined) world.state[index] = world.material[touchingMaterial]
+    if (touchingMaterial !== undefined) {
+      world.state[index] = world.material[touchingMaterial]
+      markCellActivity(world, index, ActivityFlag.Movement | ActivityFlag.Visual)
+    }
     world.updatedAt[index] = world.tick
     return
   }
   if (!MATERIAL_BY_ID.has(programmedMaterial)) {
     world.state[index] = 0
+    markCellActivity(world, index, ActivityFlag.Movement | ActivityFlag.Visual)
     world.updatedAt[index] = world.tick
     return
   }
+  keepCellActive(world, index, ActivityFlag.Movement)
   if (world.tick % SOURCE_EMISSION_INTERVAL === 0) {
     const emptyNeighbors = neighbors(world, x, y).filter((target) => world.material[target] === MaterialId.Empty)
     if (emptyNeighbors.length > 0) {
@@ -509,6 +527,7 @@ function setSolutionCell(world: World, index: number, solute: MaterialIdValue | 
   if (world.material[index] === MaterialId.Water) world.fuel[index] = 0
   else syncSolutionFuel(world, index, fuelOverride)
   world.updatedAt[index] = world.tick
+  markCellActivity(world, index, ActivityFlag.All, true)
 }
 
 function mixAqueousNeighbor(world: World, index: number, x: number, y: number): void {
@@ -553,10 +572,14 @@ function emitSmoke(world: World, x: number, y: number): void {
 function emitHeat(world: World, x: number, y: number, energyPerCell: number): void {
   if (energyPerCell <= 0 || world.tick % HEAT_EMISSION_INTERVAL !== 0) return
   const emittedEnergy = energyPerCell * HEAT_EMISSION_INTERVAL
-  if (x > 0) world.thermalRemainder[at(world, x - 1, y)] += emittedEnergy
-  if (x + 1 < world.width) world.thermalRemainder[at(world, x + 1, y)] += emittedEnergy
-  if (y > 0) world.thermalRemainder[at(world, x, y - 1)] += emittedEnergy
-  if (y + 1 < world.height) world.thermalRemainder[at(world, x, y + 1)] += emittedEnergy
+  const emitInto = (target: number): void => {
+    world.thermalRemainder[target] += emittedEnergy
+    markCellActivity(world, target, ActivityFlag.Thermal | ActivityFlag.Visual)
+  }
+  if (x > 0) emitInto(at(world, x - 1, y))
+  if (x + 1 < world.width) emitInto(at(world, x + 1, y))
+  if (y > 0) emitInto(at(world, x, y - 1))
+  if (y + 1 < world.height) emitInto(at(world, x, y + 1))
 }
 
 export function applyExplosion(world: World, originIndex: number, x: number, y: number, source: MaterialProperties): void {
@@ -605,6 +628,7 @@ function updateCombustion(world: World, index: number, x: number, y: number, mat
   world.fuel[index] -= consumed
   const generatedTemperature = Math.round(properties.combustionHeat * consumed / properties.heatCapacity)
   world.temperature[index] = Math.min(MAXIMUM_TEMPERATURE, world.temperature[index] + generatedTemperature)
+  markCellActivity(world, index, ActivityFlag.Movement | ActivityFlag.Thermal | ActivityFlag.Visual)
   emitHeat(world, x, y, properties.heatEmission)
   if (chance(world, properties.smokeYield)) emitSmoke(world, x, y)
   if (world.fuel[index] === 0) {
@@ -637,11 +661,17 @@ function updatePlant(world: World, context: UpdateContext): void {
   if (updateCombustion(world, index, x, y, MaterialId.Plant)) return
   const nearbyNutrition = neighbors(world, x, y).find((target) => MATERIAL_PROPERTIES[world.material[target] as MaterialIdValue].plantNutrition > 0)
   if (nearbyNutrition === undefined) {
-    world.state[index] = Math.max(0, world.state[index] - 1)
+    const nextState = Math.max(0, world.state[index] - 1)
+    if (nextState !== world.state[index]) {
+      world.state[index] = nextState
+      markCellActivity(world, index, ActivityFlag.Movement | ActivityFlag.Visual)
+    }
     world.updatedAt[index] = world.tick
     return
   }
+  keepCellActive(world, index, ActivityFlag.Movement)
   world.state[index] = Math.min(120, world.state[index] + 1)
+  markCellActivity(world, index, ActivityFlag.Movement | ActivityFlag.Visual)
   if (world.state[index] >= 120) {
     const candidates = [[x, y - 1], [x - 1, y], [x + 1, y], [x, y + 1]] as const
     for (const [targetX, targetY] of candidates) {
@@ -693,7 +723,12 @@ function fluidPath(world: World, x: number, y: number, direction: -1 | 1, maximu
 
 function extinguishNeighbors(world: World, x: number, y: number, power: number, sourceMaterial: MaterialIdValue): void {
   if (power <= 0) return
+  const source = at(world, x, y)
   for (const target of neighbors(world, x, y)) {
+    if (world.material[target] === MaterialId.Fire || hasStatus(world, target, StatusFlag.Burning)) {
+      keepCellActive(world, source, ActivityFlag.Movement)
+      keepCellActive(world, target, ActivityFlag.Movement)
+    }
     if (world.material[target] === MaterialId.Fire && chance(world, power / 255 * 0.32)) {
       setMaterialCell(world, target, MaterialId.Smoke, Math.min(120, world.temperature[target]))
     } else if (hasStatus(world, target, StatusFlag.Burning)
@@ -776,7 +811,12 @@ function tryRisingMove(world: World, index: number, x: number, y: number, materi
   if (properties.phase === 'gas' && chance(world, properties.dispersion * 0.25)
     && tryHorizontalGasMove(world, index, x, y, materialId)) return true
   if (tryVerticalMove(world, index, x, y, -1, materialId, false)) return true
-  return properties.phase === 'gas' && tryHorizontalGasMove(world, index, x, y, materialId)
+  if (properties.phase !== 'gas') return false
+  if (tryHorizontalGasMove(world, index, x, y, materialId)) return true
+  const hasHorizontalOpening = (x > 0 && world.material[at(world, x - 1, y)] === MaterialId.Empty)
+    || (x + 1 < world.width && world.material[at(world, x + 1, y)] === MaterialId.Empty)
+  if (hasHorizontalOpening) keepCellActive(world, index, ActivityFlag.Movement)
+  return false
 }
 
 function updateFire(world: World, { index, x, y }: UpdateContext): void {
@@ -785,6 +825,7 @@ function updateFire(world: World, { index, x, y }: UpdateContext): void {
   if (lifetime <= 1) return emptyCell(world, index)
   world.state[index] = lifetime - 1
   world.temperature[index] = Math.max(world.temperature[index], 500)
+  markCellActivity(world, index, ActivityFlag.Movement | ActivityFlag.Thermal | ActivityFlag.Visual)
   emitHeat(world, x, y, MATERIAL_PROPERTIES[MaterialId.Fire].heatEmission)
   if (tryRisingMove(world, index, x, y, MaterialId.Fire)) return
   world.updatedAt[index] = world.tick
@@ -794,6 +835,7 @@ function updateSmoke(world: World, { index, x, y }: UpdateContext): void {
   const lifetime = world.state[index] || randomInt(world, SMOKE_LIFETIME_MIN, SMOKE_LIFETIME_MAX)
   if (lifetime <= 1) return emptyCell(world, index)
   world.state[index] = lifetime - 1
+  markCellActivity(world, index, ActivityFlag.Movement | ActivityFlag.Visual)
   if (world.tick % 2 === 0) {
     if (tryRisingMove(world, index, x, y, MaterialId.Smoke)) return
   }
@@ -809,6 +851,7 @@ function updateSpark(world: World, { index, x, y }: UpdateContext): void {
   const lifetime = world.state[index] || randomInt(world, 3, 6)
   if (lifetime <= 1) return emptyCell(world, index)
   world.state[index] = lifetime - 1
+  markCellActivity(world, index, ActivityFlag.Movement | ActivityFlag.Visual)
   if (tryRisingMove(world, index, x, y, MaterialId.Spark)) return
   world.updatedAt[index] = world.tick
 }
@@ -878,4 +921,5 @@ export function initializeTransientState(world: World, index: number, materialId
   if (materialId === MaterialId.Fire) world.state[index] = randomInt(world, FIRE_LIFETIME_MIN, FIRE_LIFETIME_MAX)
   else if (materialId === MaterialId.Smoke) world.state[index] = randomInt(world, SMOKE_LIFETIME_MIN, SMOKE_LIFETIME_MAX)
   else if (materialId === MaterialId.Spark) world.state[index] = randomInt(world, 3, 6)
+  markCellActivity(world, index, ActivityFlag.All, true)
 }

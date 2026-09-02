@@ -5,6 +5,15 @@ import { launchElectricalPulse, updateElectricity } from './electricity'
 import { normalizeSeed } from './random'
 import { rasterizeTitle } from './title'
 import { GRID_HEIGHT, GRID_WIDTH, type Snapshot, type UpdateContext, type World } from './types'
+import {
+  ACTIVITY_TILE_SIZE,
+  ActivityFlag,
+  beginActivityStep,
+  clearActivity,
+  finishMovementActivity,
+  markAllActivity,
+  markCellActivity,
+} from './activity'
 
 const MOBILITY_CODE = { none: 0, immovable: 1, powder: 2, fluid: 3, rising: 4 } as const
 const MATERIAL_MOBILITY = Uint8Array.from(MATERIALS.map((material) => MOBILITY_CODE[material.properties.mobility]))
@@ -12,8 +21,11 @@ const STATIONARY_MASK = 1 << MOBILITY_CODE.immovable
 const FALLING_MASK = (1 << MOBILITY_CODE.powder) | (1 << MOBILITY_CODE.fluid)
 const RISING_MASK = 1 << MOBILITY_CODE.rising
 
-export function createWorld(seed = 0x4b504958, withTitle = true, width = GRID_WIDTH, height = GRID_HEIGHT): World {
+export function createWorld(seed = 0x4b504958, withTitle = true, width = GRID_WIDTH, height = GRID_HEIGHT, activityEnabled = true): World {
   const normalizedSeed = normalizeSeed(seed)
+  const tileColumns = Math.ceil(width / ACTIVITY_TILE_SIZE)
+  const tileRows = Math.ceil(height / ACTIVITY_TILE_SIZE)
+  const tileCount = tileColumns * tileRows
   const world: World = {
     width,
     height,
@@ -34,12 +46,24 @@ export function createWorld(seed = 0x4b504958, withTitle = true, width = GRID_WI
     electricalWaves: [],
     electricalLaunchTick: -1,
     electricalActive: false,
+    activityEnabled,
+    tileColumns,
+    tileRows,
+    activeTiles: new Uint8Array(tileCount),
+    touchedTiles: new Uint8Array(tileCount),
+    activityWorkTiles: new Uint8Array(tileCount),
+    movementIdleTicks: new Uint8Array(tileCount),
+    visualDirtyTiles: new Uint8Array(tileCount),
+    denseActivityFlags: 0,
+    denseTouchedFlags: 0,
+    visualAllDirty: true,
     ambientTemperature: AMBIENT_TEMPERATURE,
     tick: 0,
     seed: normalizedSeed,
     randomState: normalizedSeed,
   }
   world.temperature.fill(world.ambientTemperature)
+  markAllActivity(world)
   if (withTitle) rasterizeTitle(world)
   return world
 }
@@ -50,30 +74,66 @@ function updatePass(world: World, mobilityMask: number, rising: boolean): void {
   const endY = rising ? world.height : -1
   const stepY = rising ? 1 : -1
   const context: UpdateContext = { direction, index: 0, x: 0, y: 0 }
+  let activeTileCount = 0
+  if (world.activityEnabled) {
+    for (let tile = 0; tile < world.activeTiles.length; tile += 1) {
+      if (world.activeTiles[tile] & ActivityFlag.Movement) activeTileCount += 1
+    }
+  }
+  const dense = !world.activityEnabled || activeTileCount * 4 >= world.activeTiles.length * 3
+
+  if (dense) {
+    for (let y = startY; y !== endY; y += stepY) {
+      const startX = direction === 1 ? 0 : world.width - 1
+      const endX = direction === 1 ? world.width : -1
+      for (let x = startX; x !== endX; x += direction) {
+        const index = y * world.width + x
+        if (world.updatedAt[index] === world.tick) continue
+        const materialId = world.material[index]
+        if ((mobilityMask & (1 << MATERIAL_MOBILITY[materialId])) === 0) continue
+        context.index = index
+        context.x = x
+        context.y = y
+        MATERIALS[materialId].update(world, context)
+      }
+    }
+    return
+  }
 
   for (let y = startY; y !== endY; y += stepY) {
-    const startX = direction === 1 ? 0 : world.width - 1
-    const endX = direction === 1 ? world.width : -1
-    for (let x = startX; x !== endX; x += direction) {
-      const index = y * world.width + x
-      if (world.updatedAt[index] === world.tick) continue
-      const materialId = world.material[index]
-      if ((mobilityMask & (1 << MATERIAL_MOBILITY[materialId])) === 0) continue
-      context.index = index
-      context.x = x
-      context.y = y
-      MATERIALS[materialId].update(world, context)
+    const tileY = Math.floor(y / ACTIVITY_TILE_SIZE)
+    const startTileX = direction === 1 ? 0 : world.tileColumns - 1
+    const endTileX = direction === 1 ? world.tileColumns : -1
+    for (let tileX = startTileX; tileX !== endTileX; tileX += direction) {
+      const tile = tileY * world.tileColumns + tileX
+      if (world.activityEnabled && (world.activeTiles[tile] & ActivityFlag.Movement) === 0) continue
+      const minimumX = tileX * ACTIVITY_TILE_SIZE
+      const maximumX = Math.min(world.width, minimumX + ACTIVITY_TILE_SIZE)
+      const startX = direction === 1 ? minimumX : maximumX - 1
+      const endX = direction === 1 ? maximumX : minimumX - 1
+      for (let x = startX; x !== endX; x += direction) {
+        const index = y * world.width + x
+        if (world.updatedAt[index] === world.tick) continue
+        const materialId = world.material[index]
+        if ((mobilityMask & (1 << MATERIAL_MOBILITY[materialId])) === 0) continue
+        context.index = index
+        context.x = x
+        context.y = y
+        MATERIALS[materialId].update(world, context)
+      }
     }
   }
 }
 
 export function stepWorld(world: World): void {
   world.tick += 1
+  beginActivityStep(world)
   updatePass(world, STATIONARY_MASK, false)
   updatePass(world, FALLING_MASK, false)
   updatePass(world, RISING_MASK, true)
   updateElectricity(world)
   updatePhysicalWorld(world)
+  finishMovementActivity(world)
 }
 
 export function clearWorld(world: World): void {
@@ -94,6 +154,7 @@ export function clearWorld(world: World): void {
   world.electricalWaves.length = 0
   world.electricalLaunchTick = -1
   world.electricalActive = false
+  clearActivity(world)
 }
 
 export function paintCircle(world: World, centerX: number, centerY: number, radius: number, materialId: number, erase = false): void {
@@ -121,6 +182,7 @@ export function paintCircle(world: World, centerX: number, centerY: number, radi
         world.liquidMass[index] = 0
         world.phaseProgress[index] = 0
         world.thermalRemainder[index] = 0
+        markCellActivity(world, index, ActivityFlag.All, true)
       } else {
         const definition = MATERIALS[materialId]
         const canPaint = definition?.paintable && (
@@ -130,6 +192,7 @@ export function paintCircle(world: World, centerX: number, centerY: number, radi
         if (canPaint) {
           world.material[index] = materialId
           initializeTransientState(world, index, materialId)
+          markCellActivity(world, index, ActivityFlag.All, true)
         }
       }
     }
@@ -200,4 +263,6 @@ export function replaceWorld(world: World, snapshot: Snapshot): void {
   world.tick = snapshot.tick >>> 0
   world.seed = normalizeSeed(snapshot.seed)
   world.randomState = normalizeSeed(snapshot.randomState)
+  clearActivity(world)
+  markAllActivity(world)
 }

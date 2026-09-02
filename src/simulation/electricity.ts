@@ -1,5 +1,12 @@
 import { addTemperature, MATERIAL_PROPERTIES, MaterialId, type MaterialIdValue, solutionStrength, StatusFlag } from './materials'
 import type { ElectricalWave, MaterialProperties, World } from './types'
+import {
+  ACTIVITY_TILE_SIZE,
+  ActivityFlag,
+  clearActivityFlag,
+  markCellActivity,
+  prepareActivityWork,
+} from './activity'
 
 const CHARGE_STRENGTH = 255
 const CHARGE_VISIBLE_THRESHOLD = 32
@@ -35,6 +42,7 @@ export function launchElectricalPulse(world: World, sources: readonly number[]):
     if (index < 0 || index >= world.material.length || wave.visited[index] || effectiveElectricalConductivity(world, index) <= 0) continue
     wave.visited[index] = 1
     wave.queue[wave.tail++] = index
+    markCellActivity(world, index, ActivityFlag.Electrical | ActivityFlag.Visual, true)
   }
   if (wave.tail === 0) return
   wave.layerEnd = wave.tail
@@ -46,6 +54,7 @@ function enqueueWaveNeighbor(world: World, wave: ElectricalWave, index: number):
   if (wave.visited[index] || effectiveElectricalConductivity(world, index) <= 0) return
   wave.visited[index] = 1
   wave.queue[wave.tail++] = index
+  markCellActivity(world, index, ActivityFlag.Electrical | ActivityFlag.Visual)
 }
 
 function advanceWave(world: World, wave: ElectricalWave, next: Uint8Array): boolean {
@@ -55,6 +64,7 @@ function advanceWave(world: World, wave: ElectricalWave, next: Uint8Array): bool
       const index = wave.queue[wave.head++]
       if (effectiveElectricalConductivity(world, index) <= 0) continue
       next[index] = Math.max(next[index], CURRENT_TRAIL_STRENGTH)
+      markCellActivity(world, index, ActivityFlag.Electrical | ActivityFlag.Visual)
       const x = index % world.width
       const y = Math.floor(index / world.width)
       if (x > 0) enqueueWaveNeighbor(world, wave, index - 1)
@@ -70,22 +80,33 @@ function advanceWave(world: World, wave: ElectricalWave, next: Uint8Array): bool
 
 export function updateElectricity(world: World): void {
   if (!world.electricalActive) return
+  const work = prepareActivityWork(world, ActivityFlag.Electrical)
+  clearActivityFlag(world, ActivityFlag.Electrical)
   const next = world.chargeNext
   next.fill(0)
   let hasSource = false
 
-  for (let index = 0; index < world.charge.length; index += 1) {
-    const charge = world.charge[index]
-    if (charge > 0) next[index] = Math.max(0, charge - CURRENT_TRAIL_DECAY)
-  }
-
   const activeSources: number[] = []
-  for (let index = 0; index < world.material.length; index += 1) {
-    const properties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
-    if (properties.chargeSource <= 0) continue
-    hasSource = true
-    if (!isChargeSourceActive(properties, world.tick)) continue
-    activeSources.push(index)
+  for (let tile = 0; tile < work.length; tile += 1) {
+    if (work[tile] === 0) continue
+    const tileX = tile % world.tileColumns
+    const tileY = Math.floor(tile / world.tileColumns)
+    const minimumX = tileX * ACTIVITY_TILE_SIZE
+    const maximumX = Math.min(world.width, minimumX + ACTIVITY_TILE_SIZE)
+    const minimumY = tileY * ACTIVITY_TILE_SIZE
+    const maximumY = Math.min(world.height, minimumY + ACTIVITY_TILE_SIZE)
+    for (let y = minimumY; y < maximumY; y += 1) {
+      for (let x = minimumX; x < maximumX; x += 1) {
+        const index = y * world.width + x
+        const charge = world.charge[index]
+        if (charge > 0) next[index] = Math.max(0, charge - CURRENT_TRAIL_DECAY)
+        const properties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
+        if (properties.chargeSource <= 0) continue
+        hasSource = true
+        markCellActivity(world, index, ActivityFlag.Electrical)
+        if (isChargeSourceActive(properties, world.tick)) activeSources.push(index)
+      }
+    }
   }
   if (activeSources.length > 0 && world.electricalLaunchTick !== world.tick) {
     launchElectricalPulse(world, activeSources)
@@ -98,25 +119,41 @@ export function updateElectricity(world: World): void {
   world.charge = next
   world.chargeNext = previous
   let hasCharge = false
-  for (let index = 0; index < world.material.length; index += 1) {
-    const charge = world.charge[index]
-    if (charge > 0) hasCharge = true
-    const properties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
-    if (charge >= CHARGE_VISIBLE_THRESHOLD) world.status[index] |= StatusFlag.Charged
-    else world.status[index] &= ~StatusFlag.Charged
-    const conductivity = effectiveElectricalConductivity(world, index)
-    if (charge > 0 && conductivity > 0 && conductivity < 255) addTemperature(world, index, Math.round(charge * (255 - conductivity) / 8_160))
-    let ignitionCharge = charge
-    if (properties.sparkSensitivity > 0 && ignitionCharge < 256 - properties.sparkSensitivity) {
-      const x = index % world.width
-      const y = Math.floor(index / world.width)
-      if (x > 0) ignitionCharge = Math.max(ignitionCharge, world.charge[index - 1])
-      if (x + 1 < world.width) ignitionCharge = Math.max(ignitionCharge, world.charge[index + 1])
-      if (y > 0) ignitionCharge = Math.max(ignitionCharge, world.charge[index - world.width])
-      if (y + 1 < world.height) ignitionCharge = Math.max(ignitionCharge, world.charge[index + world.width])
-    }
-    if (properties.sparkSensitivity > 0 && world.fuel[index] > 0 && ignitionCharge >= 256 - properties.sparkSensitivity) {
-      world.status[index] |= StatusFlag.Burning
+  for (let tile = 0; tile < work.length; tile += 1) {
+    if (work[tile] === 0 && (world.activeTiles[tile] & ActivityFlag.Electrical) === 0) continue
+    const tileX = tile % world.tileColumns
+    const tileY = Math.floor(tile / world.tileColumns)
+    const minimumX = tileX * ACTIVITY_TILE_SIZE
+    const maximumX = Math.min(world.width, minimumX + ACTIVITY_TILE_SIZE)
+    const minimumY = tileY * ACTIVITY_TILE_SIZE
+    const maximumY = Math.min(world.height, minimumY + ACTIVITY_TILE_SIZE)
+    for (let y = minimumY; y < maximumY; y += 1) {
+      for (let x = minimumX; x < maximumX; x += 1) {
+        const index = y * world.width + x
+        const charge = world.charge[index]
+        const previousStatus = world.status[index]
+        if (charge > 0) {
+          hasCharge = true
+          markCellActivity(world, index, ActivityFlag.Electrical | ActivityFlag.Visual)
+        }
+        const properties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
+        if (charge >= CHARGE_VISIBLE_THRESHOLD) world.status[index] |= StatusFlag.Charged
+        else world.status[index] &= ~StatusFlag.Charged
+        const conductivity = effectiveElectricalConductivity(world, index)
+        if (charge > 0 && conductivity > 0 && conductivity < 255) addTemperature(world, index, Math.round(charge * (255 - conductivity) / 8_160))
+        let ignitionCharge = charge
+        if (properties.sparkSensitivity > 0 && ignitionCharge < 256 - properties.sparkSensitivity) {
+          if (x > 0) ignitionCharge = Math.max(ignitionCharge, world.charge[index - 1])
+          if (x + 1 < world.width) ignitionCharge = Math.max(ignitionCharge, world.charge[index + 1])
+          if (y > 0) ignitionCharge = Math.max(ignitionCharge, world.charge[index - world.width])
+          if (y + 1 < world.height) ignitionCharge = Math.max(ignitionCharge, world.charge[index + world.width])
+        }
+        if (properties.sparkSensitivity > 0 && world.fuel[index] > 0 && ignitionCharge >= 256 - properties.sparkSensitivity) {
+          world.status[index] |= StatusFlag.Burning
+          markCellActivity(world, index, ActivityFlag.Movement | ActivityFlag.Visual)
+        }
+        if (world.status[index] !== previousStatus) markCellActivity(world, index, ActivityFlag.Visual)
+      }
     }
   }
   world.electricalActive = hasSource || hasCharge || world.electricalWaves.length > 0

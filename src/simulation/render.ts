@@ -1,8 +1,9 @@
 import { MATERIALS, MATERIAL_PROPERTIES, MaterialId, type MaterialIdValue, solutionStrength, StatusFlag } from './materials'
 import { AMBIENT_TEMPERATURE, MAXIMUM_TEMPERATURE, MINIMUM_TEMPERATURE } from './constants'
 import type { World } from './types'
+import { ACTIVITY_TILE_SIZE } from './activity'
 
-const RENDER_TILE_SIZE = 12
+const RENDER_TILE_SIZE = ACTIVITY_TILE_SIZE
 
 export interface RenderCache {
   material: Uint8Array
@@ -218,23 +219,35 @@ export function renderWorld(
   cache.dirtyTiles.fill(0)
   let changedCells = 0
   let dirtyTileCount = 0
-  for (let index = 0; index < world.material.length; index += 1) {
-    if (!visualStateChanged(world, cache, index)) continue
-    const [red, green, blue] = cellColor(world, index)
-    const pixel = index * 4
-    pixels[pixel] = red
-    pixels[pixel + 1] = green
-    pixels[pixel + 2] = blue
-    pixels[pixel + 3] = 255
-    changedCells += 1
-    const x = index % world.width
-    const y = Math.floor(index / world.width)
-    const tile = Math.floor(y / RENDER_TILE_SIZE) * cache.tileColumns + Math.floor(x / RENDER_TILE_SIZE)
-    if (cache.dirtyTiles[tile] === 0) {
-      cache.dirtyTiles[tile] = 1
-      dirtyTileCount += 1
+  const allDirty = !world.activityEnabled || world.visualAllDirty
+  for (let tile = 0; tile < cache.dirtyTiles.length; tile += 1) {
+    if (!allDirty && world.visualDirtyTiles[tile] === 0) continue
+    const tileX = tile % cache.tileColumns
+    const tileY = Math.floor(tile / cache.tileColumns)
+    const minimumX = tileX * RENDER_TILE_SIZE
+    const maximumX = Math.min(world.width, minimumX + RENDER_TILE_SIZE)
+    const minimumY = tileY * RENDER_TILE_SIZE
+    const maximumY = Math.min(world.height, minimumY + RENDER_TILE_SIZE)
+    for (let y = minimumY; y < maximumY; y += 1) {
+      for (let x = minimumX; x < maximumX; x += 1) {
+        const index = y * world.width + x
+        if (!visualStateChanged(world, cache, index)) continue
+        const [red, green, blue] = cellColor(world, index)
+        const pixel = index * 4
+        pixels[pixel] = red
+        pixels[pixel + 1] = green
+        pixels[pixel + 2] = blue
+        pixels[pixel + 3] = 255
+        changedCells += 1
+        if (cache.dirtyTiles[tile] === 0) {
+          cache.dirtyTiles[tile] = 1
+          dirtyTileCount += 1
+        }
+      }
     }
+    if (world.activityEnabled) world.visualDirtyTiles[tile] = 0
   }
+  if (world.activityEnabled) world.visualAllDirty = false
   return {
     changedCells,
     uploadedRegions: uploadDirtyTiles(context, imageData, cache, world.width, world.height, dirtyTileCount),

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createWorld } from './engine'
 import { MaterialId, StatusFlag } from './materials'
 import { createRenderCache, renderWorld } from './render'
+import { ActivityFlag, markCellActivity } from './activity'
 
 function renderHarness(width = 24, height = 24) {
   const world = createWorld(1, false, width, height)
@@ -26,9 +27,10 @@ describe('dirty region rendering', () => {
     renderWorld(context, world, imageData, cache)
     putImageData.mockClear()
     world.material[0] = MaterialId.Stone
+    markCellActivity(world, 0, ActivityFlag.Visual)
     const result = renderWorld(context, world, imageData, cache)
     expect(result).toEqual({ changedCells: 1, uploadedRegions: 1 })
-    expect(putImageData).toHaveBeenCalledWith(imageData, 0, 0, 0, 0, 12, 12)
+    expect(putImageData).toHaveBeenCalledWith(imageData, 0, 0, 0, 0, 16, 16)
   })
 
   it('continues repainting animated burning and charged cells', () => {
@@ -38,6 +40,7 @@ describe('dirty region rendering', () => {
     world.fuel[0] = 200
     renderWorld(context, world, imageData, cache)
     world.tick += 1
+    markCellActivity(world, 0, ActivityFlag.Visual)
     expect(renderWorld(context, world, imageData, cache).changedCells).toBe(1)
   })
 })

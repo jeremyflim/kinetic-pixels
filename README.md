@@ -20,8 +20,10 @@ automatic saving.
   a dedicated module worker, keeping high-frequency grid updates out of React. A bounded work
   budget yields during overload instead of stacking long catch-up bursts.
 - **Dirty-region rendering:** one persistent pixel buffer caches the last visible cell state,
-  recolors only changed cells, and uploads merged 12 × 12 regions; unchanged frames perform no
+  recolors only explicitly dirtied 16 × 16 tiles, and uploads merged regions; unchanged frames perform no
   canvas upload.
+- **Sleeping simulation tiles:** separate movement, thermal, moisture, electrical, and visual
+  activity masks keep settled regions out of hot loops while one-tile halos preserve propagation.
 - **Compact deterministic state:** parallel typed arrays store material identity, per-cell
   material state, electrical charge, temperature, moisture, fuel, liquid mass, phase progress,
   status, and update bookkeeping. A serialized xorshift PRNG makes equal seeds and commands
@@ -163,7 +165,8 @@ Playwright verifies the user-visible contract rather than internal React state.
 
 The current suite contains:
 
-- **65 Vitest tests** covering material behavior, dirty-region rendering, electrical networks, overlapping-pulse
+- **67 Vitest tests** covering material behavior, activity scheduling, full-grid thermal comparison,
+  dirty-region rendering, electrical networks, overlapping-pulse
   termination, aqueous dilution, flow
   properties, Source, heat and phase transitions, moisture, chemistry, sparse combustion residue,
   explosions, deterministic ordering, clearing, save migration, and serialization.
@@ -210,29 +213,37 @@ Run the reproducible benchmark with:
 
 ```bash
 npm run benchmark
+npm run benchmark:activity
 ```
 
-Development-machine result (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1.11):
+Development-machine activity comparison (AMD Ryzen 9 7940HS, 8 cores / 16 threads; Vitest 4.1.11):
 
-| 192 × 180 scenario | Mean tick | Throughput |
-| --- | ---: | ---: |
-| Fully occupied stationary grid | 4.03 ms | 247.95 ticks/s |
-| Falling Sand | 4.76 ms | 209.89 ticks/s |
-| Water spread | 2.93 ms | 341.87 ticks/s |
-| Water and Alcohol mixing | 7.12 ms | 140.35 ticks/s |
-| Fully occupied Lava / thermal field | 7.87 ms | 127.06 ticks/s |
-| Current propagating through Metal | 6.26 ms | 159.71 ticks/s |
-| Burning Wood / Fire / Smoke | 6.39 ms | 156.52 ticks/s |
+| 192 × 180 scenario | Active tiles | Full-grid reference | Change |
+| --- | ---: | ---: | ---: |
+| Settled stationary field | 0.095 ms | 4.30 ms | 45.2× faster |
+| Localized constant heat | 0.388 ms | 3.66 ms | 9.4× faster |
+| Dense full-field combustion | 9.15 ms | 9.35 ms | 2.2% faster |
 
-The same command benchmarks render preparation separately. An unchanged 192 × 180 field takes
-1.23 ms to verify and performs no canvas upload; a deliberately animated half-screen combustion
-field takes 4.77 ms while recoloring 17,280 cells. These replace the previous unconditional
-whole-field recolor and upload on every visual frame.
+The dense threshold deliberately falls back to linear whole-row traversal once at least 75% of
+movement tiles are awake. Activity tracking therefore targets the common sparse and settling
+cases without imposing tiled traversal on a fully chaotic board; the dense comparison remains
+effectively even within benchmark variance.
+
+Rendering now consumes the same explicit visual-dirty mask. An unchanged 192 × 180 field takes
+about 0.0006 ms to reject and performs no canvas upload, down from the previous 1.23 ms full-cache
+comparison. A deliberately animated half-screen combustion field remains about 5.02 ms because
+all 17,280 animated cells genuinely require recoloring.
+
+A 360-tick localized-heat comparison against the retained full-grid solver produced mean absolute
+temperature error below 1°C and a 7°C worst local difference across an 880°C source-to-room range
+(under 0.8%). Only empty air within ±1°C of room temperature is snapped to ambient; stored heat in
+solids and liquids is never discarded.
 
 These figures are descriptive rather than CI thresholds because shared machines and background
 load introduce timing noise. Electrical passes are skipped when no source or traveling current exists.
 Numeric mobility dispatch, allocation-free movement attempts, and reaction target masks keep
-non-participating materials out of expensive generic paths. `2×` remains a target rate; when a
+non-participating materials out of expensive generic paths. Sixteen-pixel activity tiles keep
+settled regions out of movement, heat, moisture, electricity, and rendering scans. `2×` remains a target rate; when a
 scene cannot sustain it, the worker drops excess wall-clock debt and limits rendering to 30 Hz
 rather than issuing a multi-tick stall.
 

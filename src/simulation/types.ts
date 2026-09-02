@@ -22,6 +22,17 @@ export interface World {
   electricalWaves: ElectricalWave[]
   electricalLaunchTick: number
   electricalActive: boolean
+  activityEnabled: boolean
+  tileColumns: number
+  tileRows: number
+  activeTiles: Uint8Array
+  touchedTiles: Uint8Array
+  activityWorkTiles: Uint8Array
+  movementIdleTicks: Uint8Array
+  visualDirtyTiles: Uint8Array
+  denseActivityFlags: number
+  denseTouchedFlags: number
+  visualAllDirty: boolean
   ambientTemperature: number
   tick: number
   seed: number

@@ -7,6 +7,7 @@ import { MATERIAL_PROPERTIES, type MaterialIdValue } from './materials'
 import { resolvedPhaseTransitions } from './physics'
 import { createRenderCache, renderWorld, type RenderCache } from './render'
 import type { CellInspection, Snapshot, World } from './types'
+import { ActivityFlag, markAllActivity } from './activity'
 
 type WorkerCommand =
   | { type: 'init'; canvas: OffscreenCanvas; seed: number }
@@ -96,6 +97,7 @@ self.onmessage = (event: MessageEvent<WorkerCommand>) => {
   }
   if (command.type === 'ambient') {
     world.ambientTemperature = Math.max(MINIMUM_ROOM_TEMPERATURE, Math.min(MAXIMUM_ROOM_TEMPERATURE, Math.round(command.temperature)))
+    markAllActivity(world, ActivityFlag.Thermal | ActivityFlag.Visual)
   }
   if (command.type === 'stroke') {
     paintStroke(world, command.fromX, command.fromY, command.toX, command.toY, command.radius, command.materialId, command.erase)

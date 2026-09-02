@@ -2,6 +2,7 @@ import { bench, describe } from 'vitest'
 import { createWorld } from './engine'
 import { MaterialId, StatusFlag } from './materials'
 import { createRenderCache, renderWorld } from './render'
+import { ActivityFlag, markAllActivity } from './activity'
 
 const context = { putImageData() {} } as unknown as OffscreenCanvasRenderingContext2D
 
@@ -30,6 +31,7 @@ describe('192 × 180 render preparation', () => {
   renderWorld(context, animatedWorld, animatedImage, animatedCache)
   bench('half-screen burning animation', () => {
     animatedWorld.tick += 1
+    markAllActivity(animatedWorld, ActivityFlag.Visual)
     renderWorld(context, animatedWorld, animatedImage, animatedCache)
   })
 })

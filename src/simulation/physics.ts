@@ -19,6 +19,13 @@ import {
 } from './materials'
 import { chance } from './random'
 import type { MaterialProperties, PhaseTransition, World } from './types'
+import {
+  ACTIVITY_TILE_SIZE,
+  ActivityFlag,
+  clearActivityFlag,
+  markCellActivity,
+  prepareActivityWork,
+} from './activity'
 
 function properties(world: World, index: number): MaterialProperties {
   return MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
@@ -47,8 +54,11 @@ function exchangeTemperature(world: World, first: number, second: number): void 
   const equilibriumEnergy = Math.abs(difference) * firstCapacity * secondCapacity / (firstCapacity + secondCapacity)
   const requestedEnergy = Math.abs(difference) * conductivity * THERMAL_CONDUCTANCE_SCALE
   const energy = Math.round(Math.sign(difference) * Math.min(requestedEnergy, equilibriumEnergy * MAXIMUM_PAIR_EXCHANGE_FRACTION))
+  if (energy === 0) return
   world.temperatureDelta[first] -= energy
   world.temperatureDelta[second] += energy
+  markCellActivity(world, first, ActivityFlag.Thermal | ActivityFlag.Visual)
+  markCellActivity(world, second, ActivityFlag.Thermal | ActivityFlag.Visual)
 }
 
 export function resolvedPhaseTransitions(world: World, index: number, materialProperties: MaterialProperties): readonly PhaseTransition[] {
@@ -102,86 +112,170 @@ function completePhaseTransition(world: World, index: number, transition: PhaseT
 }
 
 function conductTemperature(world: World): void {
-  world.temperatureDelta.fill(0)
-  for (let y = 0; y < world.height; y += 1) {
-    for (let x = 0; x < world.width; x += 1) {
-      const index = y * world.width + x
-      if (x + 1 < world.width) exchangeTemperature(world, index, index + 1)
-      if (y + 1 < world.height) exchangeTemperature(world, index, index + world.width)
-      if (world.material[index] === MaterialId.Empty) {
-        const ambientDifference = world.ambientTemperature - world.temperature[index]
-        world.temperatureDelta[index] += Math.round(ambientDifference * HEAT_CAPACITY[MaterialId.Empty] * AIR_AMBIENT_EXCHANGE_FRACTION)
+  const work = prepareActivityWork(world, ActivityFlag.Thermal)
+  if (!world.activityEnabled) world.temperatureDelta.fill(0)
+  else {
+    for (let tile = 0; tile < work.length; tile += 1) {
+      if (work[tile] === 0) continue
+      const tileX = tile % world.tileColumns
+      const tileY = Math.floor(tile / world.tileColumns)
+      const minimumX = tileX * ACTIVITY_TILE_SIZE
+      const maximumX = Math.min(world.width, minimumX + ACTIVITY_TILE_SIZE)
+      const minimumY = tileY * ACTIVITY_TILE_SIZE
+      const maximumY = Math.min(world.height, minimumY + ACTIVITY_TILE_SIZE)
+      for (let y = minimumY; y < maximumY; y += 1) {
+        world.temperatureDelta.fill(0, y * world.width + minimumX, y * world.width + maximumX)
       }
     }
   }
-  for (let index = 0; index < world.temperature.length; index += 1) {
-    const capacity = HEAT_CAPACITY[world.material[index]]
-    const totalEnergy = world.thermalRemainder[index] + world.temperatureDelta[index]
-    const temperatureDelta = Math.trunc(totalEnergy / capacity)
-    const nextTemperature = clampTemperature(world.temperature[index] + temperatureDelta)
-    world.temperature[index] = nextTemperature
-    world.thermalRemainder[index] = nextTemperature === MINIMUM_TEMPERATURE || nextTemperature === MAXIMUM_TEMPERATURE
-      ? 0
-      : totalEnergy - temperatureDelta * capacity
+  clearActivityFlag(world, ActivityFlag.Thermal)
+  for (let tile = 0; tile < work.length; tile += 1) {
+    if (work[tile] === 0) continue
+    const tileX = tile % world.tileColumns
+    const tileY = Math.floor(tile / world.tileColumns)
+    const minimumX = tileX * ACTIVITY_TILE_SIZE
+    const maximumX = Math.min(world.width, minimumX + ACTIVITY_TILE_SIZE)
+    const minimumY = tileY * ACTIVITY_TILE_SIZE
+    const maximumY = Math.min(world.height, minimumY + ACTIVITY_TILE_SIZE)
+    for (let y = minimumY; y < maximumY; y += 1) {
+      for (let x = minimumX; x < maximumX; x += 1) {
+        const index = y * world.width + x
+        if (x + 1 < world.width && (x + 1 < maximumX || work[tile + 1] !== 0)) exchangeTemperature(world, index, index + 1)
+        if (y + 1 < world.height && (y + 1 < maximumY || work[tile + world.tileColumns] !== 0)) exchangeTemperature(world, index, index + world.width)
+        if (world.material[index] === MaterialId.Empty) {
+          const ambientDifference = world.ambientTemperature - world.temperature[index]
+          world.temperatureDelta[index] += Math.round(ambientDifference * HEAT_CAPACITY[MaterialId.Empty] * AIR_AMBIENT_EXCHANGE_FRACTION)
+        }
+      }
+    }
+  }
+  for (let tile = 0; tile < work.length; tile += 1) {
+    if (work[tile] === 0) continue
+    const tileX = tile % world.tileColumns
+    const tileY = Math.floor(tile / world.tileColumns)
+    const minimumX = tileX * ACTIVITY_TILE_SIZE
+    const maximumX = Math.min(world.width, minimumX + ACTIVITY_TILE_SIZE)
+    const minimumY = tileY * ACTIVITY_TILE_SIZE
+    const maximumY = Math.min(world.height, minimumY + ACTIVITY_TILE_SIZE)
+    for (let y = minimumY; y < maximumY; y += 1) {
+      for (let x = minimumX; x < maximumX; x += 1) {
+        const index = y * world.width + x
+        const previousTemperature = world.temperature[index]
+        const capacity = HEAT_CAPACITY[world.material[index]]
+        const totalEnergy = world.thermalRemainder[index] + world.temperatureDelta[index]
+        const temperatureDelta = Math.trunc(totalEnergy / capacity)
+        let nextTemperature = clampTemperature(previousTemperature + temperatureDelta)
+        let nextRemainder = nextTemperature === MINIMUM_TEMPERATURE || nextTemperature === MAXIMUM_TEMPERATURE
+          ? 0
+          : totalEnergy - temperatureDelta * capacity
+        if (world.activityEnabled && world.material[index] === MaterialId.Empty
+          && Math.abs(nextTemperature - world.ambientTemperature) <= 1) {
+          nextTemperature = world.ambientTemperature
+          nextRemainder = 0
+        }
+        world.temperature[index] = nextTemperature
+        world.thermalRemainder[index] = nextRemainder
+        if (nextTemperature !== previousTemperature) {
+          const flags = ActivityFlag.Thermal | ActivityFlag.Visual
+            | (world.moisture[index] > 0 ? ActivityFlag.Moisture : 0)
+          markCellActivity(world, index, flags)
+        }
+        if (world.material[index] === MaterialId.Empty && Math.abs(nextTemperature - world.ambientTemperature) > 1) {
+          markCellActivity(world, index, ActivityFlag.Thermal)
+        }
+      }
+    }
   }
 }
 
 function updatePhaseAndIgnition(world: World): void {
-  for (let index = 0; index < world.material.length; index += 1) {
-    const materialId = world.material[index] as MaterialIdValue
-    if (materialId === MaterialId.Empty) {
-      world.phaseProgress[index] = 0
-      world.status[index] = 0
-      continue
-    }
-    let materialProperties = MATERIAL_PROPERTIES[materialId]
-    const transition = activePhaseTransition(world, index, materialProperties)
-    if (transition) {
-      const distance = Math.abs(world.temperature[index] - transition.temperature)
-      const availableEnergy = distance * materialProperties.heatCapacity
-      const neededEnergy = Math.max(0, transition.latentHeat - world.phaseProgress[index])
-      const absorbedEnergy = Math.min(availableEnergy, neededEnergy)
-      world.phaseProgress[index] = Math.min(0xffff_ffff, world.phaseProgress[index] + absorbedEnergy)
-      const direction = transition.direction === 'above' ? 1 : -1
-      world.temperature[index] = transition.temperature
-      if (world.phaseProgress[index] >= transition.latentHeat) {
-        const productProperties = MATERIAL_PROPERTIES[transition.product as MaterialIdValue]
-        const remainingEnergy = availableEnergy - absorbedEnergy
-        const retainedTemperature = transition.temperature + direction * Math.trunc(remainingEnergy / productProperties.heatCapacity)
-        completePhaseTransition(world, index, transition, retainedTemperature)
-        materialProperties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
-      }
-    } else {
-      world.phaseProgress[index] = Math.max(0, world.phaseProgress[index] - materialProperties.heatCapacity)
-    }
+  const work = world.activityWorkTiles
+  for (let tile = 0; tile < work.length; tile += 1) {
+    if (work[tile] === 0) continue
+    const tileX = tile % world.tileColumns
+    const tileY = Math.floor(tile / world.tileColumns)
+    const minimumX = tileX * ACTIVITY_TILE_SIZE
+    const maximumX = Math.min(world.width, minimumX + ACTIVITY_TILE_SIZE)
+    const minimumY = tileY * ACTIVITY_TILE_SIZE
+    const maximumY = Math.min(world.height, minimumY + ACTIVITY_TILE_SIZE)
+    for (let y = minimumY; y < maximumY; y += 1) {
+      for (let x = minimumX; x < maximumX; x += 1) {
+        const index = y * world.width + x
+        const materialId = world.material[index] as MaterialIdValue
+        if (materialId === MaterialId.Empty) {
+          const changed = world.phaseProgress[index] !== 0 || world.status[index] !== 0
+          world.phaseProgress[index] = 0
+          world.status[index] = 0
+          if (changed) markCellActivity(world, index, ActivityFlag.Visual)
+          continue
+        }
+        let materialProperties = MATERIAL_PROPERTIES[materialId]
+        const transition = activePhaseTransition(world, index, materialProperties)
+        if (transition) {
+          const distance = Math.abs(world.temperature[index] - transition.temperature)
+          const availableEnergy = distance * materialProperties.heatCapacity
+          const neededEnergy = Math.max(0, transition.latentHeat - world.phaseProgress[index])
+          const absorbedEnergy = Math.min(availableEnergy, neededEnergy)
+          world.phaseProgress[index] = Math.min(0xffff_ffff, world.phaseProgress[index] + absorbedEnergy)
+          const direction = transition.direction === 'above' ? 1 : -1
+          world.temperature[index] = transition.temperature
+          markCellActivity(world, index, ActivityFlag.Thermal | ActivityFlag.Visual)
+          if (world.phaseProgress[index] < transition.latentHeat) markCellActivity(world, index, ActivityFlag.Thermal)
+          if (world.phaseProgress[index] >= transition.latentHeat) {
+            const productProperties = MATERIAL_PROPERTIES[transition.product as MaterialIdValue]
+            const remainingEnergy = availableEnergy - absorbedEnergy
+            const retainedTemperature = transition.temperature + direction * Math.trunc(remainingEnergy / productProperties.heatCapacity)
+            completePhaseTransition(world, index, transition, retainedTemperature)
+            materialProperties = MATERIAL_PROPERTIES[world.material[index] as MaterialIdValue]
+          }
+        } else {
+          world.phaseProgress[index] = Math.max(0, world.phaseProgress[index] - materialProperties.heatCapacity)
+          if (world.phaseProgress[index] > 0) markCellActivity(world, index, ActivityFlag.Thermal)
+        }
 
-    const ignitionTemperature = materialProperties.ignitionTemperature
-    if (ignitionTemperature === null || world.fuel[index] <= 0 || (world.status[index] & StatusFlag.Burning)) continue
-    const capacity = materialProperties.moistureCapacity
-    const saturation = capacity > 0 ? world.moisture[index] / capacity : 0
-    if (saturation >= 0.35) continue
-    const adjustedIgnition = ignitionTemperature + Math.round(saturation * 250)
-    if (world.temperature[index] >= adjustedIgnition) world.status[index] |= StatusFlag.Burning
+        const ignitionTemperature = materialProperties.ignitionTemperature
+        if (ignitionTemperature === null || world.fuel[index] <= 0 || (world.status[index] & StatusFlag.Burning)) continue
+        const capacity = materialProperties.moistureCapacity
+        const saturation = capacity > 0 ? world.moisture[index] / capacity : 0
+        if (saturation >= 0.35) continue
+        const adjustedIgnition = ignitionTemperature + Math.round(saturation * 250)
+        if (world.temperature[index] >= adjustedIgnition) {
+          world.status[index] |= StatusFlag.Burning
+          markCellActivity(world, index, ActivityFlag.Movement | ActivityFlag.Visual)
+        }
+      }
+    }
   }
 }
 
-function transferWaterIntoPorousMaterials(world: World): void {
-  for (let y = 0; y < world.height; y += 1) {
-    for (let x = 0; x < world.width; x += 1) {
-      const source = y * world.width + x
-      if ((world.material[source] !== MaterialId.Water && world.material[source] !== MaterialId.SaltWater) || world.liquidMass[source] === 0) continue
-      for (const [offsetX, offsetY] of [[0, -1], [-1, 0], [1, 0], [0, 1]] as const) {
-        const targetX = x + offsetX
-        const targetY = y + offsetY
-        if (targetX < 0 || targetX >= world.width || targetY < 0 || targetY >= world.height) continue
-        const target = targetY * world.width + targetX
-        const targetProperties = properties(world, target)
-        const room = targetProperties.moistureCapacity - world.moisture[target] - world.moistureDelta[target]
-        if (room <= 0 || targetProperties.moistureAbsorption <= 0) continue
-        const amount = Math.min(room, targetProperties.moistureAbsorption, world.liquidMass[source])
-        world.moistureDelta[target] += amount
-        world.liquidMass[source] -= amount
-        if (world.liquidMass[source] === 0) break
+function transferWaterIntoPorousMaterials(world: World, work: Uint8Array): void {
+  for (let tile = 0; tile < work.length; tile += 1) {
+    if (work[tile] === 0) continue
+    const tileX = tile % world.tileColumns
+    const tileY = Math.floor(tile / world.tileColumns)
+    const minimumX = tileX * ACTIVITY_TILE_SIZE
+    const maximumX = Math.min(world.width, minimumX + ACTIVITY_TILE_SIZE)
+    const minimumY = tileY * ACTIVITY_TILE_SIZE
+    const maximumY = Math.min(world.height, minimumY + ACTIVITY_TILE_SIZE)
+    for (let y = minimumY; y < maximumY; y += 1) {
+      for (let x = minimumX; x < maximumX; x += 1) {
+        const source = y * world.width + x
+        if ((world.material[source] !== MaterialId.Water && world.material[source] !== MaterialId.SaltWater) || world.liquidMass[source] === 0) continue
+        for (const [offsetX, offsetY] of [[0, -1], [-1, 0], [1, 0], [0, 1]] as const) {
+          const targetX = x + offsetX
+          const targetY = y + offsetY
+          if (targetX < 0 || targetX >= world.width || targetY < 0 || targetY >= world.height) continue
+          const target = targetY * world.width + targetX
+          const targetProperties = properties(world, target)
+          const room = targetProperties.moistureCapacity - world.moisture[target] - world.moistureDelta[target]
+          if (room <= 0 || targetProperties.moistureAbsorption <= 0) continue
+          const amount = Math.min(room, targetProperties.moistureAbsorption, world.liquidMass[source])
+          world.moistureDelta[target] += amount
+          world.liquidMass[source] -= amount
+          markCellActivity(world, source, ActivityFlag.Moisture | ActivityFlag.Movement | ActivityFlag.Electrical | ActivityFlag.Visual)
+          markCellActivity(world, target, ActivityFlag.Moisture | ActivityFlag.Movement | ActivityFlag.Electrical | ActivityFlag.Visual)
+          if (world.liquidMass[source] === 0) break
+        }
       }
     }
   }
@@ -205,6 +299,8 @@ function diffuseMoistureEdge(world: World, first: number, second: number): void 
   if (amount <= 0) return
   world.moistureDelta[donor] -= amount
   world.moistureDelta[receiver] += amount
+  markCellActivity(world, donor, ActivityFlag.Moisture | ActivityFlag.Movement | ActivityFlag.Electrical | ActivityFlag.Visual)
+  markCellActivity(world, receiver, ActivityFlag.Moisture | ActivityFlag.Movement | ActivityFlag.Electrical | ActivityFlag.Visual)
 }
 
 function evaporateMoisture(world: World, index: number): void {
@@ -213,6 +309,7 @@ function evaporateMoisture(world: World, index: number): void {
   const amount = Math.min(world.moisture[index], 1 + Math.trunc((world.temperature[index] - 60) / 35))
   world.moisture[index] -= amount
   world.temperature[index] = clampTemperature(world.temperature[index] - Math.max(1, Math.trunc(amount * 18 / materialProperties.heatCapacity)))
+  markCellActivity(world, index, ActivityFlag.Moisture | ActivityFlag.Movement | ActivityFlag.Thermal | ActivityFlag.Visual)
   if (amount < 4) return
   const x = index % world.width
   const y = Math.floor(index / world.width)
@@ -228,22 +325,65 @@ function evaporateMoisture(world: World, index: number): void {
 }
 
 function updateMoisture(world: World): void {
-  world.moistureDelta.fill(0)
-  transferWaterIntoPorousMaterials(world)
-  for (let y = 0; y < world.height; y += 1) {
-    for (let x = 0; x < world.width; x += 1) {
-      const index = y * world.width + x
-      if (x + 1 < world.width) diffuseMoistureEdge(world, index, index + 1)
-      if (y + 1 < world.height) diffuseMoistureEdge(world, index, index + world.width)
+  const work = prepareActivityWork(world, ActivityFlag.Moisture)
+  if (!world.activityEnabled) world.moistureDelta.fill(0)
+  else {
+    for (let tile = 0; tile < work.length; tile += 1) {
+      if (work[tile] === 0) continue
+      const tileX = tile % world.tileColumns
+      const tileY = Math.floor(tile / world.tileColumns)
+      const minimumX = tileX * ACTIVITY_TILE_SIZE
+      const maximumX = Math.min(world.width, minimumX + ACTIVITY_TILE_SIZE)
+      const minimumY = tileY * ACTIVITY_TILE_SIZE
+      const maximumY = Math.min(world.height, minimumY + ACTIVITY_TILE_SIZE)
+      for (let y = minimumY; y < maximumY; y += 1) {
+        world.moistureDelta.fill(0, y * world.width + minimumX, y * world.width + maximumX)
+      }
     }
   }
-  for (let index = 0; index < world.moisture.length; index += 1) {
-    const capacity = properties(world, index).moistureCapacity
-    world.moisture[index] = Math.max(0, Math.min(capacity, world.moisture[index] + world.moistureDelta[index]))
-    evaporateMoisture(world, index)
-    if (world.moisture[index] > 0) world.status[index] |= StatusFlag.Wet
-    else world.status[index] &= ~StatusFlag.Wet
-    if ((world.material[index] === MaterialId.Water || world.material[index] === MaterialId.SaltWater) && world.liquidMass[index] === 0) emptyCell(world, index)
+  clearActivityFlag(world, ActivityFlag.Moisture)
+  transferWaterIntoPorousMaterials(world, work)
+  for (let tile = 0; tile < work.length; tile += 1) {
+    if (work[tile] === 0) continue
+    const tileX = tile % world.tileColumns
+    const tileY = Math.floor(tile / world.tileColumns)
+    const minimumX = tileX * ACTIVITY_TILE_SIZE
+    const maximumX = Math.min(world.width, minimumX + ACTIVITY_TILE_SIZE)
+    const minimumY = tileY * ACTIVITY_TILE_SIZE
+    const maximumY = Math.min(world.height, minimumY + ACTIVITY_TILE_SIZE)
+    for (let y = minimumY; y < maximumY; y += 1) {
+      for (let x = minimumX; x < maximumX; x += 1) {
+        const index = y * world.width + x
+        if (x + 1 < world.width && (x + 1 < maximumX || work[tile + 1] !== 0)) diffuseMoistureEdge(world, index, index + 1)
+        if (y + 1 < world.height && (y + 1 < maximumY || work[tile + world.tileColumns] !== 0)) diffuseMoistureEdge(world, index, index + world.width)
+      }
+    }
+  }
+  for (let tile = 0; tile < work.length; tile += 1) {
+    if (work[tile] === 0) continue
+    const tileX = tile % world.tileColumns
+    const tileY = Math.floor(tile / world.tileColumns)
+    const minimumX = tileX * ACTIVITY_TILE_SIZE
+    const maximumX = Math.min(world.width, minimumX + ACTIVITY_TILE_SIZE)
+    const minimumY = tileY * ACTIVITY_TILE_SIZE
+    const maximumY = Math.min(world.height, minimumY + ACTIVITY_TILE_SIZE)
+    for (let y = minimumY; y < maximumY; y += 1) {
+      for (let x = minimumX; x < maximumX; x += 1) {
+        const index = y * world.width + x
+        const previousMoisture = world.moisture[index]
+        const previousStatus = world.status[index]
+        const capacity = properties(world, index).moistureCapacity
+        world.moisture[index] = Math.max(0, Math.min(capacity, previousMoisture + world.moistureDelta[index]))
+        evaporateMoisture(world, index)
+        if (world.moisture[index] > 0) world.status[index] |= StatusFlag.Wet
+        else world.status[index] &= ~StatusFlag.Wet
+        if (world.moisture[index] !== previousMoisture || world.status[index] !== previousStatus) {
+          markCellActivity(world, index, ActivityFlag.Moisture | ActivityFlag.Movement | ActivityFlag.Electrical | ActivityFlag.Visual)
+        }
+        if (world.moisture[index] > 0 && world.temperature[index] > 60) markCellActivity(world, index, ActivityFlag.Moisture)
+        if ((world.material[index] === MaterialId.Water || world.material[index] === MaterialId.SaltWater) && world.liquidMass[index] === 0) emptyCell(world, index)
+      }
+    }
   }
 }
 

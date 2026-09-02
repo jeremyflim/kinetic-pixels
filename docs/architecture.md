@@ -14,6 +14,8 @@ core has no React, DOM, worker, or canvas dependencies.
 - The world uses parallel typed arrays for material, per-material progress/lifetime state, electrical charge, status flags,
   temperature, moisture, fuel, liquid mass, 32-bit phase progress, fractional thermal-energy
   remainder, and last-updated tick.
+- Transient 16 × 16 tile masks separately track movement, thermal, moisture, electrical, and
+  visual activity. They are rebuilt after loading and are never part of the save format.
 - Simulation randomness comes only from the serialized seeded PRNG.
 - Every cell is updated at most once per tick.
 - Falling passes scan bottom-to-top; rising passes scan top-to-bottom.
@@ -122,6 +124,14 @@ Versions 2–5 remain accepted; legacy burning, Wet, heat, and 16-bit phase valu
 replacement. Fractional thermal remainder and per-pulse traversal history are transient solver
 state; saved full-strength fronts are conservatively relaunched when a world is restored.
 
+The 192 × 180 field is divided into 144 activity tiles. Movement tiles sleep after eight ticks
+without a mutation or a persistent interaction; painting, movement, reactions, explosions, phase
+changes, and cross-system property changes wake the affected boundary tiles. Thermal and moisture
+passes expand their awake set by one tile before processing, so fronts cross sleeping boundaries
+without a global scan. Empty air within 1°C of room temperature is snapped to ambient; solids and
+liquids retain both temperature and fractional energy while asleep. When at least 75% of movement
+tiles are awake, traversal switches to the cheaper dense linear scan.
+
 ## Worker protocol
 
 The UI sends compact commands for initialization, play state, time rate, strokes, clearing,
@@ -139,10 +149,10 @@ with `image-rendering: pixelated` while preserving the grid's 16:15 aspect ratio
 red/blue thermal tint applies to every cell, including air, so the continuous field is visible.
 One persistent `ImageData` remains the only application-owned RGBA buffer. A compact cache of the
 previous material, state, status, charge, temperature, moisture, fuel, and animation tick detects
-visual changes. Changed cells are recolored and grouped into 12 × 12 dirty tiles; contiguous tiles
+visual changes inside explicitly dirtied tiles. Changed cells are recolored and grouped into 16 × 16 tiles; contiguous tiles
 on a row share one partial `putImageData` upload, while changes covering more than one quarter of
-the field use one full upload. A completely unchanged frame performs neither color calculation
-nor canvas upload after the inexpensive state comparison.
+the field use one full upload. A completely unchanged frame performs neither a whole-field state
+comparison, color calculation, nor canvas upload.
 The fixed viewport can magnify its canvas from 100–400%; pointer-centered wheel calculations
 preserve the sampled world cell while the full-height bezel slider provides keyboard and direct
 control without changing the playfield dimensions.
